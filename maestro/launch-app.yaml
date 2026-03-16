@@ -1,0 +1,21 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# E2E test: Verify app launches and initial UI renders correctly
+
+- launchApp:
+    clearState: true
+    arguments:
+      PHANTOM_MOCK: "1"
+
+# Verify the home screen renders
+- assertVisible: "Phantom Connect SDK"
+- assertVisible: "Demo Application"
+- assertVisible: "Connection Status"
+- assertVisible: "About"
+
+# Should be disconnected on fresh launch
+- runFlow: subflows/assert-disconnected.yaml
+
+# Connect options should be visible
+- assertVisible: "Open Connect Modal"
+- assertVisible: "Connect with Google"

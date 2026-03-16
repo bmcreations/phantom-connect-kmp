@@ -1,0 +1,12 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# Subflow: Open the SDK connect sheet and sign in with Google
+- tapOn: "Open Connect Modal"
+
+# The SDK's built-in sheet should appear
+- assertVisible: "Login or Sign Up"
+- assertVisible: "Continue with Google"
+- assertVisible: "Continue with Apple"
+
+# Select Google
+- tapOn: "Continue with Google"

@@ -1,0 +1,16 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# E2E test: Direct Google login flow via mock server
+# Prerequisites:
+#   - Mock server running: cd maestro/mock-server && docker compose up -d
+#   - App built with mock flavor
+
+- launchApp:
+    clearState: true
+    arguments:
+      PHANTOM_MOCK: "1"
+- runFlow: subflows/assert-disconnected.yaml
+
+# Connect directly with Google (bypasses the SDK connect sheet)
+- runFlow: subflows/connect-with-google.yaml
+- runFlow: subflows/assert-connected.yaml

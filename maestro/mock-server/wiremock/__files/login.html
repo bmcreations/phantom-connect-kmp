@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mock Login</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 40px; background: #1a1a2e; color: #fff; }
+        .spinner { margin: 20px auto; width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #ab9ff2; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <h2>Mock Phantom Login</h2>
+    <div class="spinner"></div>
+    <p>Redirecting...</p>
+    <script>
+        (function() {
+            var params = new URLSearchParams(window.location.search);
+            var redirectUri = params.get('redirect_uri');
+
+            if (!redirectUri) {
+                document.querySelector('p').textContent = 'Error: No redirect_uri provided';
+                return;
+            }
+
+            var mockParams = new URLSearchParams({
+                wallet_id: 'mock-wallet-123',
+                organization_id: 'mock-org-456',
+                selected_account_index: '0',
+                expires_in_ms: '604800000',
+                auth_user_id: 'mock-user-789'
+            });
+
+            var separator = redirectUri.indexOf('?') >= 0 ? '&' : '?';
+            var targetUrl = redirectUri + separator + mockParams.toString();
+
+            // Short delay so Custom Tabs has time to render before redirecting
+            setTimeout(function() {
+                window.location.href = targetUrl;
+            }, 500);
+        })();
+    </script>
+</body>
+</html>

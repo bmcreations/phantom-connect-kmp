@@ -1,0 +1,7 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# Subflow: Navigate to wallet operations screen and assert it loaded
+- tapOn: "Open Wallet Operations"
+- assertVisible: "Wallet Operations"
+- assertVisible: "Wallet Information"
+- assertVisible: "SOL Balance"

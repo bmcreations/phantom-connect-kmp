@@ -1,0 +1,6 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# Subflow: Assert app is in disconnected state on home screen
+- assertVisible: "Disconnected"
+- assertVisible: "Connect Wallet"
+- assertNotVisible: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"

@@ -1,0 +1,15 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# E2E test: Sign a message after connecting
+# Prerequisites:
+#   - Mock server running
+#   - App already connected (run login-with-google.yaml first or use full-flow.yaml)
+
+- launchApp
+
+# Should still be connected from previous test
+- runFlow: subflows/assert-connected.yaml
+
+# Navigate to wallet operations and sign
+- runFlow: subflows/navigate-to-wallet.yaml
+- runFlow: subflows/sign-message.yaml

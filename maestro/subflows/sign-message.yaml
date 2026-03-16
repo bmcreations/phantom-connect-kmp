@@ -1,0 +1,11 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# Subflow: Sign a message and verify the signature result
+- assertVisible: "Sign Message"
+- assertVisible: "Hello from Phantom SDK!"
+- tapOn:
+    text: "Sign Message"
+- extendedWaitUntil:
+    visible:
+      text: "Signature"
+    timeout: 30000

@@ -1,0 +1,8 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# E2E test: Logout flow
+# Assumes the app is already connected (run after login-with-google.yaml)
+
+- launchApp
+- runFlow: subflows/disconnect.yaml
+- runFlow: subflows/assert-disconnected.yaml

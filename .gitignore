@@ -1,0 +1,40 @@
+# Gradle
+.gradle/
+build/
+Internal/PhantomConnectSDK/.build
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Kotlin/KMP
+.kotlin/
+*.class
+*.jar
+*.war
+*.aar
+
+# Android
+local.properties
+*.apk
+*.aab
+
+# iOS
+*.xcframework
+*.framework
+Pods/
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Secrets
+*.keystore
+*.jks
+.env
+
+.claude/settings.local.json

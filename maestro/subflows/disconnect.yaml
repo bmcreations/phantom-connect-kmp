@@ -1,0 +1,8 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# Subflow: Disconnect wallet (works from any screen with a Disconnect button)
+- scrollUntilVisible:
+    element:
+      text: "Disconnect Wallet"
+    direction: DOWN
+- tapOn: "Disconnect Wallet"

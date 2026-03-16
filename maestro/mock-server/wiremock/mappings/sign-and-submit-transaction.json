@@ -1,0 +1,26 @@
+{
+    "priority": 1,
+    "request": {
+        "method": "POST",
+        "urlPath": "/v1/wallets/kms/rpc",
+        "bodyPatterns": [
+            {
+                "matchesJsonPath": {
+                    "expression": "$.method",
+                    "equalTo": "signAndSubmitTransaction"
+                }
+            }
+        ]
+    },
+    "response": {
+        "status": 200,
+        "jsonBody": {
+            "result": {
+                "transactionHash": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4GPaYh1BnR63kFL1xQMszik5Z5RTNfLnBWivRvzXkRTJCxRhN11GKCkefNjN"
+            }
+        },
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    }
+}

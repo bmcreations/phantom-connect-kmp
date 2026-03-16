@@ -1,0 +1,10 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# Subflow: Assert app is in connected state on home screen
+- extendedWaitUntil:
+    visible:
+      text: "Connected"
+    timeout: 60000
+- assertVisible: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+- assertVisible: "Open Wallet Operations"
+- assertVisible: "Disconnect Wallet"

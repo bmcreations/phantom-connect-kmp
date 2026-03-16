@@ -1,0 +1,19 @@
+{
+    "priority": 999,
+    "request": {
+        "method": "POST",
+        "urlPath": "/v1/wallets"
+    },
+    "response": {
+        "status": 200,
+        "jsonBody": {
+            "error": {
+                "code": -32601,
+                "message": "Method not found"
+            }
+        },
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    }
+}

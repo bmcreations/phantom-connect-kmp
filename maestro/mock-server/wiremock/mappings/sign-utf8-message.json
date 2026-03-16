@@ -1,0 +1,26 @@
+{
+    "priority": 1,
+    "request": {
+        "method": "POST",
+        "urlPath": "/v1/wallets/kms/rpc",
+        "bodyPatterns": [
+            {
+                "matchesJsonPath": {
+                    "expression": "$.method",
+                    "equalTo": "signUtf8Message"
+                }
+            }
+        ]
+    },
+    "response": {
+        "status": 200,
+        "jsonBody": {
+            "result": {
+                "signature": "5d2e8a4f1b3c6e9d7a0f2b4c8e1d3f5a7b9c0e2d4f6a8b1c3e5d7f9a0b2c4e6d8f1a3b5c7e9d0f2a4b6c8e1d3f5a7b9c0e2d4f6a8b1c3e5d7f9a0b2c4e"
+            }
+        },
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    }
+}

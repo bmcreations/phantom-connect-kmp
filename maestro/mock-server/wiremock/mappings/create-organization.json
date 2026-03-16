@@ -1,0 +1,26 @@
+{
+    "priority": 1,
+    "request": {
+        "method": "POST",
+        "urlPath": "/v1/wallets",
+        "bodyPatterns": [
+            {
+                "matchesJsonPath": {
+                    "expression": "$.method",
+                    "equalTo": "createOrganization"
+                }
+            }
+        ]
+    },
+    "response": {
+        "status": 200,
+        "jsonBody": {
+            "result": {
+                "organizationId": "mock-org-456"
+            }
+        },
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    }
+}

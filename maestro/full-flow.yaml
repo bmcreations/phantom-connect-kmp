@@ -1,0 +1,30 @@
+appId: dev.bmcreations.phantom.connect.sample
+---
+# E2E test: Complete flow — connect sheet → wallet operations → sign → disconnect
+# Prerequisites:
+#   - Mock server running: cd maestro/mock-server && docker compose up -d
+#   - App built with mock flavor: ./gradlew :sample-android:installMockDebug
+#   - Or iOS app built and installed on simulator
+
+- launchApp:
+    clearState: true
+    arguments:
+      PHANTOM_MOCK: "1"
+
+# Verify initial state
+- assertVisible: "Phantom Connect SDK"
+- runFlow: subflows/assert-disconnected.yaml
+
+# === Step 1: Connect via the SDK's connect sheet ===
+- runFlow: subflows/connect-via-sheet.yaml
+- runFlow: subflows/assert-connected.yaml
+
+# === Step 2: Navigate to wallet operations ===
+- runFlow: subflows/navigate-to-wallet.yaml
+
+# === Step 3: Sign a message ===
+- runFlow: subflows/sign-message.yaml
+
+# === Step 4: Disconnect ===
+- runFlow: subflows/disconnect.yaml
+- runFlow: subflows/assert-disconnected.yaml

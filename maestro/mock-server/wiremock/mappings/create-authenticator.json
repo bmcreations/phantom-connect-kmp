@@ -1,0 +1,26 @@
+{
+    "priority": 1,
+    "request": {
+        "method": "POST",
+        "urlPath": "/v1/wallets/kms/rpc",
+        "bodyPatterns": [
+            {
+                "matchesJsonPath": {
+                    "expression": "$.method",
+                    "equalTo": "createAuthenticator"
+                }
+            }
+        ]
+    },
+    "response": {
+        "status": 200,
+        "jsonBody": {
+            "result": {
+                "authenticatorId": "mock-authenticator-001"
+            }
+        },
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    }
+}
