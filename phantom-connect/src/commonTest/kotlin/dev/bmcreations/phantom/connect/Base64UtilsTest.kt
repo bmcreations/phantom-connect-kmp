@@ -1,7 +1,7 @@
 package dev.bmcreations.phantom.connect
 
-import dev.bmcreations.phantom.connect.internal.fromBase64Url
-import dev.bmcreations.phantom.connect.internal.toBase64Url
+import dev.bmcreations.phantom.connect.internal.crypto.fromBase64Url
+import dev.bmcreations.phantom.connect.internal.crypto.toBase64Url
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertContentEquals

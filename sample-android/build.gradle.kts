@@ -49,6 +49,7 @@ android {
 
 dependencies {
     implementation(project(":phantom-connect"))
+    implementation(project(":phantom-connect-wallet"))
     implementation(libs.activity.compose)
     implementation(platform(libs.compose.bom))
     implementation(libs.material3)

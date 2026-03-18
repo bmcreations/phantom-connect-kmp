@@ -15,4 +15,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "phantom-connect-kmp"
 include(":phantom-connect")
+include(":phantom-connect-wallet")
 include(":sample-android")

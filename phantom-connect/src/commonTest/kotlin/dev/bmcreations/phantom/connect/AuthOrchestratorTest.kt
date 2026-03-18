@@ -2,7 +2,12 @@ package dev.bmcreations.phantom.connect
 
 import com.ionspin.kotlin.crypto.LibsodiumInitializer
 import dev.bmcreations.phantom.connect.fakes.*
-import dev.bmcreations.phantom.connect.internal.*
+import dev.bmcreations.phantom.connect.internal.auth.AuthOrchestrator
+import dev.bmcreations.phantom.connect.internal.crypto.Ed25519Stamper
+import dev.bmcreations.phantom.connect.internal.crypto.KeyStoreTags
+import dev.bmcreations.phantom.connect.internal.network.PhantomClient
+import dev.bmcreations.phantom.connect.internal.network.SolanaRpcClient
+import dev.bmcreations.phantom.connect.internal.platform.sdkType
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -39,13 +44,23 @@ class AuthOrchestratorTest {
         timeProvider = FakeTimeProvider()
     }
 
-    private fun createOrchestrator(mockEngine: MockEngine): AuthOrchestrator {
+    private fun createOrchestrator(
+        mockEngine: MockEngine,
+        connectors: List<WalletConnector> = emptyList(),
+        solanaRpcEngine: MockEngine? = null,
+    ): AuthOrchestrator {
         val httpClient = HttpClient(mockEngine) {
             install(ContentNegotiation) { json(json) }
         }
         val stamper = Ed25519Stamper(keyStore)
         val client = PhantomClient(httpClient, stamper, config, timeProvider)
-        return AuthOrchestrator(client, keyStore, sessionStore, oauthLauncher, stamper, config, timeProvider)
+        val solanaRpcClient = solanaRpcEngine?.let { engine ->
+            val rpcHttpClient = HttpClient(engine) {
+                install(ContentNegotiation) { json(json) }
+            }
+            SolanaRpcClient(rpcHttpClient, config.network)
+        }
+        return AuthOrchestrator(client, keyStore, sessionStore, oauthLauncher, stamper, config, timeProvider, connectors, solanaRpcClient)
     }
 
     private fun mockEngineForUserWallet(): MockEngine = MockEngine { request ->
@@ -393,6 +408,253 @@ class AuthOrchestratorTest {
 
         val signed = orchestrator.signAllTransactions(listOf("tx1==", "tx2=="))
         assertEquals(listOf("signed1==", "signed2=="), signed)
+    }
+
+    // ── External Wallet Connect Tests (Deeplink) ──
+
+    @Test
+    fun connectWithExternalWalletSucceeds() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        val result = orchestrator.connectWithExternalWallet(connector)
+
+        assertTrue(result is ConnectResult.Success)
+        val session = result.session
+        assertEquals("", session.walletId)
+        assertEquals("", session.organizationId)
+        assertEquals("fake_wallet", session.providerId)
+        assertEquals(WalletType.DeeplinkWallet, session.walletType)
+        assertEquals("FakeWalletPubKey123", session.address(Chain.Solana))
+        assertEquals(1, connector.connectCount)
+    }
+
+    @Test
+    fun connectWithExternalWalletCancelled() = runTest {
+        val connector = FakeWalletConnector()
+        connector.nextConnectResult = WalletConnectorResult.Cancelled("user cancelled")
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet())
+        val result = orchestrator.connectWithExternalWallet(connector)
+
+        assertTrue(result is ConnectResult.Cancelled)
+        assertEquals("user cancelled", (result as ConnectResult.Cancelled).reason)
+        assertEquals(1, connector.connectCount)
+    }
+
+    @Test
+    fun connectWithExternalWalletError() = runTest {
+        val connector = FakeWalletConnector()
+        connector.nextConnectResult = WalletConnectorResult.Error(RuntimeException("app not installed"))
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet())
+        val result = orchestrator.connectWithExternalWallet(connector)
+
+        assertTrue(result is ConnectResult.Error)
+        assertEquals("app not installed", (result as ConnectResult.Error).cause.message)
+    }
+
+    @Test
+    fun connectWithExternalWalletSavesSession() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        assertEquals(1, sessionStore.saveCount)
+        assertNotNull(sessionStore.stored)
+        assertEquals("fake_wallet", sessionStore.stored?.providerId)
+        assertEquals(WalletType.DeeplinkWallet, sessionStore.stored?.walletType)
+    }
+
+    // ── Deeplink Signing Routing Tests ──
+
+    @Test
+    fun signMessageRoutesToConnectorForDeeplinkSession() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        connector.nextSignMessageResult = WalletSignResult.Success("deeplink-sig-abc")
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        val sig = orchestrator.signMessage("Hello Solana")
+        assertEquals("deeplink-sig-abc", sig)
+        assertEquals(1, connector.signMessageCount)
+    }
+
+    @Test
+    fun signTransactionRoutesToConnector() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        connector.nextSignTransactionResult = WalletSignResult.Success("signed-tx-base58")
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        val sig = orchestrator.signTransaction("dHgxZGF0YQ==") // "tx1data" base64
+        assertEquals("signed-tx-base58", sig)
+        assertEquals(1, connector.signTransactionCount)
+    }
+
+    @Test
+    fun signAndSendTransactionSignsThenSubmitsViaRpcForDeeplink() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        // signTransaction returns a base58-encoded signed tx (must be valid base58)
+        connector.nextSignTransactionResult = WalletSignResult.Success("3AsdoALgZFuq8id")
+
+        // Mock Solana RPC that returns a tx signature
+        val solanaRpcEngine = MockEngine {
+            respond(
+                content = """{"jsonrpc":"2.0","id":1,"result":"5wHu1qwD7q5j2F4pHDn...txSig"}""",
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+
+        val orchestrator = createOrchestrator(
+            mockEngineForUserWallet(),
+            connectors = listOf(connector),
+            solanaRpcEngine = solanaRpcEngine,
+        )
+        orchestrator.connectWithExternalWallet(connector)
+
+        val sig = orchestrator.signAndSendTransaction("dHgxZGF0YQ==")
+        assertEquals("5wHu1qwD7q5j2F4pHDn...txSig", sig)
+        // Should use signTransaction, NOT signAndSendTransaction
+        assertEquals(1, connector.signTransactionCount)
+        assertEquals(0, connector.signAndSendTransactionCount)
+    }
+
+    @Test
+    fun signAllTransactionsRoutesToConnector() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        connector.nextSignAllTransactionsResult = WalletSignAllResult.Success(listOf("s1", "s2"))
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        val signed = orchestrator.signAllTransactions(listOf("dHgx", "dHgy"))
+        assertEquals(listOf("s1", "s2"), signed)
+        assertEquals(1, connector.signAllTransactionsCount)
+    }
+
+    @Test
+    fun ethereumSigningThrowsForDeeplinkSession() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        assertFailsWith<UnsupportedOperationException> {
+            orchestrator.signPersonalMessage("Hello Ethereum")
+        }
+        assertFailsWith<UnsupportedOperationException> {
+            orchestrator.signTypedData("""{"types":{}}""")
+        }
+    }
+
+    @Test
+    fun getSessionSkipsRenewalForDeeplinkSession() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        // Deeplink sessions have expiresAt=0, so renewal would normally trigger.
+        // But getSession should skip renewal entirely for deeplink sessions.
+        val session = orchestrator.getSession()
+        assertNotNull(session)
+        assertEquals(WalletType.DeeplinkWallet, session.walletType)
+    }
+
+    @Test
+    fun logoutCallsDisconnectForDeeplinkSession() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        connector.exportedState = """{"fake":"state"}"""
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        orchestrator.logout()
+
+        assertEquals(1, connector.disconnectCount)
+        assertNull(sessionStore.stored)
+    }
+
+    @Test
+    fun connectWithExternalWalletPersistsConnectorState() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        connector.exportedState = """{"dappSecretKey":"abc","sharedSecret":"xyz"}"""
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        val result = orchestrator.connectWithExternalWallet(connector)
+
+        assertTrue(result is ConnectResult.Success)
+        assertEquals("""{"dappSecretKey":"abc","sharedSecret":"xyz"}""", result.session.connectorState)
+        assertEquals("""{"dappSecretKey":"abc","sharedSecret":"xyz"}""", sessionStore.stored?.connectorState)
+    }
+
+    @Test
+    fun getSessionRestoresConnectorStateForDeeplinkSession() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        connector.exportedState = """{"fake":"state"}"""
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        // Reset restore tracking, then call getSession
+        connector.restoreCount = 0
+        connector.restoredState = null
+
+        val session = orchestrator.getSession()
+        assertNotNull(session)
+        assertEquals(1, connector.restoreCount)
+        assertEquals("""{"fake":"state"}""", connector.restoredState)
+    }
+
+    @Test
+    fun getSessionSkipsRestoreWhenNoConnectorState() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        // exportedState is null — no connector state to persist
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        connector.restoreCount = 0
+        val session = orchestrator.getSession()
+        assertNotNull(session)
+        assertEquals(0, connector.restoreCount)
+    }
+
+    @Test
+    fun logoutRestoresStateThenDisconnects() = runTest {
+        val connector = FakeWalletConnector()
+        connector.succeedWith()
+        connector.exportedState = """{"crypto":"state"}"""
+
+        val orchestrator = createOrchestrator(mockEngineForUserWallet(), connectors = listOf(connector))
+        orchestrator.connectWithExternalWallet(connector)
+
+        // Reset tracking
+        connector.restoreCount = 0
+        connector.restoredState = null
+
+        orchestrator.logout()
+
+        // Should restore state before disconnecting
+        assertEquals(1, connector.restoreCount)
+        assertEquals("""{"crypto":"state"}""", connector.restoredState)
+        assertEquals(1, connector.disconnectCount)
     }
 
     // ── Authenticator Renewal Tests ──

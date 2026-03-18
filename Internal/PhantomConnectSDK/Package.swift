@@ -2,7 +2,7 @@
 import PackageDescription
 
 let packageName = "PhantomConnectSDK"
-let sharedPackageName = "PhantomConnectKMP"
+let sharedPackageName = "PhantomConnectWalletKMP"
 
 let package = Package(
     name: packageName,
@@ -23,7 +23,7 @@ let package = Package(
         ),
         .binaryTarget(
             name: sharedPackageName,
-            path: "../../phantom-connect/build/XCFrameworks/debug/\(sharedPackageName).xcframework"
+            path: "../../phantom-connect-wallet/build/XCFrameworks/debug/\(sharedPackageName).xcframework"
         ),
     ]
 )

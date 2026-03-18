@@ -1,7 +1,7 @@
 package dev.bmcreations.phantom.connect.fakes
 
 import com.ionspin.kotlin.crypto.signature.Signature
-import dev.bmcreations.phantom.connect.internal.Ed25519KeyStoreProvider
+import dev.bmcreations.phantom.connect.internal.crypto.Ed25519KeyStoreProvider
 
 @OptIn(ExperimentalUnsignedTypes::class)
 internal class FakeEd25519KeyStore : Ed25519KeyStoreProvider {

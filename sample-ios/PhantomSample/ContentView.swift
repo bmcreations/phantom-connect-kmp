@@ -3,6 +3,7 @@ import PhantomConnectSDK
 
 struct ContentView: View {
     let phantom: PhantomClient
+    let walletConnector: PhantomWalletConnector?
 
     @State private var session: PhantomWalletSession?
     @State private var error: String?
@@ -18,6 +19,7 @@ struct ContentView: View {
             case .home:
                 HomeView(
                     phantom: phantom,
+                    walletConnector: walletConnector,
                     session: $session,
                     error: $error,
                     onOpenWallet: { screen = .wallet },

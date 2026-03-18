@@ -1,7 +1,17 @@
 package dev.bmcreations.phantom.connect
 
 import com.ionspin.kotlin.crypto.LibsodiumInitializer
-import dev.bmcreations.phantom.connect.internal.*
+import dev.bmcreations.phantom.connect.internal.auth.AuthOrchestrator
+import dev.bmcreations.phantom.connect.internal.auth.InMemorySessionStore
+import dev.bmcreations.phantom.connect.internal.crypto.Ed25519KeyStoreProvider
+import dev.bmcreations.phantom.connect.internal.crypto.Ed25519Stamper
+import dev.bmcreations.phantom.connect.internal.auth.SessionStoreProvider
+import dev.bmcreations.phantom.connect.internal.network.PhantomClient
+import dev.bmcreations.phantom.connect.internal.network.SolanaRpcClient
+import dev.bmcreations.phantom.connect.internal.platform.*
+import dev.bmcreations.phantom.connect.internal.ui.ConnectSheetProvider
+import dev.bmcreations.phantom.connect.internal.ui.InternalEthereumOperations
+import dev.bmcreations.phantom.connect.internal.ui.InternalSolanaOperations
 import io.ktor.client.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -22,6 +32,8 @@ import kotlinx.serialization.json.Json
 class PhantomSdk private constructor(
     private val orchestrator: AuthOrchestrator,
     private val connectSheetProvider: ConnectSheetProvider,
+    private val config: PhantomSdkConfig,
+    private val connectors: List<WalletConnector> = emptyList(),
 ) {
     /** Theme for the connect sheet. Can be changed at runtime. */
     var theme: ConnectSheetTheme = ConnectSheetTheme.Dark
@@ -62,6 +74,7 @@ class PhantomSdk private constructor(
         fun create(
             config: PhantomSdkConfig,
             oauthLauncher: OAuthLauncher,
+            connectors: List<WalletConnector> = emptyList(),
         ): PhantomSdk {
             if (!LibsodiumInitializer.isInitialized()) {
                 LibsodiumInitializer.initializeWithCallback {  }
@@ -95,6 +108,8 @@ class PhantomSdk private constructor(
                 timeProvider = timeProvider,
             )
 
+            val solanaRpcClient = SolanaRpcClient(httpClient, config.network)
+
             val orchestrator = AuthOrchestrator(
                 client = client,
                 keyStore = keyStore,
@@ -103,9 +118,11 @@ class PhantomSdk private constructor(
                 stamper = stamper,
                 config = config,
                 timeProvider = timeProvider,
+                connectors = connectors,
+                solanaRpcClient = solanaRpcClient,
             )
 
-            return PhantomSdk(orchestrator, connectSheet)
+            return PhantomSdk(orchestrator, connectSheet, config, connectors)
         }
 
         internal fun createForTesting(
@@ -116,6 +133,7 @@ class PhantomSdk private constructor(
             config: PhantomSdkConfig,
             timeProvider: TimeProvider = SystemTimeProvider(),
             connectSheetProvider: ConnectSheetProvider = NoopConnectSheetProvider(),
+            connectors: List<WalletConnector> = emptyList(),
         ): PhantomSdk {
             SdkLogger.logger = config.logger
 
@@ -126,6 +144,7 @@ class PhantomSdk private constructor(
                 config = config,
                 timeProvider = timeProvider,
             )
+            val solanaRpcClient = SolanaRpcClient(httpClient, config.network)
             val orchestrator = AuthOrchestrator(
                 client = client,
                 keyStore = keyStore,
@@ -134,8 +153,10 @@ class PhantomSdk private constructor(
                 stamper = stamper,
                 config = config,
                 timeProvider = timeProvider,
+                connectors = connectors,
+                solanaRpcClient = solanaRpcClient,
             )
-            return PhantomSdk(orchestrator, connectSheetProvider)
+            return PhantomSdk(orchestrator, connectSheetProvider, config, connectors)
         }
     }
 
@@ -151,13 +172,19 @@ class PhantomSdk private constructor(
     @Throws(Exception::class)
     @OptIn(kotlin.experimental.ExperimentalObjCName::class)
     @kotlin.native.ObjCName("connectWithSheet")
-    suspend fun connect(): ConnectResult =
-        connectSheetProvider.show(
+    suspend fun connect(): ConnectResult {
+        val installed = connectors.associate { it.id to it.isAppInstalled() }
+        return connectSheetProvider.show(
             theme = theme,
             session = orchestrator.getSession(),
+            providers = config.providers,
+            connectors = connectors,
+            connectorAvailability = installed,
             onConnect = { provider -> orchestrator.connectWithSocial(provider) },
+            onWalletConnect = { connector -> orchestrator.connectWithExternalWallet(connector) },
             onDisconnect = { orchestrator.logout() },
         )
+    }
 
     /**
      * Connect with a specific provider directly (bypasses the connect sheet).
@@ -168,6 +195,17 @@ class PhantomSdk private constructor(
     @Throws(Exception::class)
     suspend fun connect(provider: AuthProvider): ConnectResult =
         orchestrator.connectWithSocial(provider)
+
+    /**
+     * Connect with an external wallet connector directly (bypasses the connect sheet).
+     * The wallet app is used for every subsequent signing operation via deeplinks.
+     * Solana-only (Phantom deeplinks don't support Ethereum).
+     */
+    @Throws(Exception::class)
+    @OptIn(kotlin.experimental.ExperimentalObjCName::class)
+    @kotlin.native.ObjCName("connectWithWallet")
+    suspend fun connect(connector: WalletConnector): ConnectResult =
+        orchestrator.connectWithExternalWallet(connector)
 
     /** Create a programmatic app wallet (no OAuth, no browser). */
     @Throws(Exception::class)
@@ -230,7 +268,11 @@ internal class NoopConnectSheetProvider : ConnectSheetProvider {
     override suspend fun show(
         theme: ConnectSheetTheme,
         session: PhantomSession?,
+        providers: List<AuthProvider>,
+        connectors: List<WalletConnector>,
+        connectorAvailability: Map<String, Boolean>,
         onConnect: suspend (AuthProvider) -> ConnectResult,
+        onWalletConnect: suspend (WalletConnector) -> ConnectResult,
         onDisconnect: (suspend () -> Unit)?,
     ): ConnectResult = ConnectResult.Cancelled("No connect sheet available")
 }

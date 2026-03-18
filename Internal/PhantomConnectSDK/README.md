@@ -7,10 +7,10 @@ Swift wrapper around the Kotlin Multiplatform `PhantomConnectKMP` framework. Thi
 Add this package via Swift Package Manager in Xcode:
 
 1. File > Add Package Dependencies
-2. Enter the repository URL
+2. Enter the repository URL (https://github.com/bmcreations/phantom-connect-ios)
 3. `import PhantomConnectSDK`
 
-## Usage
+## Quick Start
 
 ```swift
 import PhantomConnectSDK
@@ -40,17 +40,89 @@ let ethSig = try await phantom.ethereum.personalSign("Hello")
 await phantom.logout()
 ```
 
+## Wallet Connector (Phantom App Deeplinks)
+
+Connect and sign via the installed Phantom mobile app using deeplinks. This enables Solana-only wallet operations through the [Phantom deeplink protocol](https://docs.phantom.com/solana/integrating-phantom/deeplinks-solana).
+
+The wallet connector types (`PhantomWalletConnector`, `IosDeeplinkLauncher`) are included in this package -- no separate dependency needed.
+
+### Setup
+
+```swift
+import PhantomConnectSDK
+
+let connector = PhantomWalletConnector(
+    deeplinkLauncher: createDeeplinkLauncher(),
+    appUrl: "https://your-app.example.com",
+    callbackScheme: "myapp"
+)
+
+let phantom = PhantomClient(
+    appId: "your-app-id",
+    redirectScheme: "myapp",
+    redirectUri: "myapp://phantom-callback",
+    connectors: [connector]
+)
+```
+
+### Handle Callbacks
+
+Register a URL handler so Phantom's deeplink responses reach the SDK:
+
+```swift
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .onOpenURL { url in
+                    IosDeeplinkLauncher.handleCallback(url: url)
+                }
+        }
+    }
+}
+```
+
+### Connect via Sheet
+
+When connectors are provided, the connect sheet automatically includes them alongside social login buttons. Each connector's `callToAction` (default: `"Continue with {displayName}"`) is used as the button label:
+
+```swift
+let result = await phantom.connect()  // sheet includes wallet option
+```
+
+### Connect Directly
+
+Bypass the sheet and connect with the Phantom app directly:
+
+```swift
+let result = await phantom.connect(connector: connector)
+```
+
+### Parameters
+
+| Parameter          | Description                                                                                                                     |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `deeplinkLauncher` | `createDeeplinkLauncher()` -- handles opening Phantom and receiving callbacks                                                   |
+| `appUrl`           | Your app's HTTPS URL, used by Phantom to identify the dapp. Must be a valid URL, not a custom scheme.                           |
+| `callbackScheme`   | URL scheme for deeplink callbacks (e.g. `"myapp"`). Phantom sends results back to `{callbackScheme}://phantom-wallet-callback`. |
+
+### Session Persistence
+
+Deeplink wallet sessions persist alongside social login sessions. The connector's crypto state (X25519 keypair, shared secret, session token) is saved with the session. On app restart, `getSession()` restores both the session and the connector state, so signing works without re-connecting.
+
 ## API
 
 ### `PhantomClient`
 
-| Method               | Description                                                             |
-|----------------------|-------------------------------------------------------------------------|
-| `connect()`          | Show connect sheet                                                      |
-| `connect(provider:)` | Connect with specific provider                                          |
-| `createAppWallet()`  | Create app wallet (no OAuth)                                            |
-| `getSession()`       | Get current session (restores saved session, auto-renews authenticator) |
-| `logout()`           | Clear session and keys                                                  |
+| Method                | Description                                                             |
+|-----------------------|-------------------------------------------------------------------------|
+| `connect()`           | Show connect sheet (includes wallet connectors if provided)             |
+| `connect(provider:)`  | Connect with specific social provider                                   |
+| `connect(connector:)` | Connect with a wallet connector directly                                |
+| `createAppWallet()`   | Create app wallet (no OAuth)                                            |
+| `getSession()`        | Get current session (restores saved session, auto-renews authenticator) |
+| `logout()`            | Clear session and keys                                                  |
 
 ### `phantom.solana` (`SolanaChain`)
 
@@ -76,6 +148,7 @@ await phantom.logout()
 
 | Parameter        | Default    | Description                                                       |
 |------------------|------------|-------------------------------------------------------------------|
+| `connectors`     | `[]`       | Wallet connectors (e.g. `PhantomWalletConnector`)                 |
 | `network`        | `.mainnet` | `.mainnet`, `.devnet`, or `.testnet`                              |
 | `persistSession` | `true`     | Set to `false` to disable session persistence across app restarts |
 | `logger`         | `nil`      | `(String, String, String) -> Void` for debug logs                 |
@@ -91,14 +164,6 @@ let phantom = PhantomClient(
     redirectUri: "myapp://phantom-callback",
     persistSession: false
 )
-```
-
-### SwiftUI
-
-```swift
-PhantomClientButton(phantom: phantom) { result in
-    // handle result
-}
 ```
 
 ### Theming

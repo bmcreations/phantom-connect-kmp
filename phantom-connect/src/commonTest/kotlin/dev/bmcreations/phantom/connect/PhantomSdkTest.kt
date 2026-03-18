@@ -2,7 +2,7 @@ package dev.bmcreations.phantom.connect
 
 import com.ionspin.kotlin.crypto.LibsodiumInitializer
 import dev.bmcreations.phantom.connect.fakes.*
-import dev.bmcreations.phantom.connect.internal.*
+import dev.bmcreations.phantom.connect.internal.auth.InMemorySessionStore
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -183,11 +183,11 @@ class PhantomSdkTest {
         oauthLauncher.succeedWith()
 
         // Two separate in-memory session stores simulate two SDK instances (app restarts)
-        val store1 = dev.bmcreations.phantom.connect.internal.InMemorySessionStore()
-        val store2 = dev.bmcreations.phantom.connect.internal.InMemorySessionStore()
+        val store1 = InMemorySessionStore()
+        val store2 = InMemorySessionStore()
         val engine = defaultMockEngine()
 
-        fun makeSdk(store: dev.bmcreations.phantom.connect.internal.InMemorySessionStore): PhantomSdk {
+        fun makeSdk(store: InMemorySessionStore): PhantomSdk {
             val httpClient = HttpClient(MockEngine { request ->
                 val body = request.body.toByteArray().decodeToString()
                 when {

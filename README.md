@@ -7,6 +7,7 @@ Built from the official [phantom-connect-sdk](https://github.com/phantom/phantom
 ## Features
 
 - **Social login** -- Google and Apple sign-in via secure system browser
+- **Phantom wallet app** -- Connect and sign via the installed Phantom app using [deeplinks](https://docs.phantom.com/solana/integrating-phantom/deeplinks-solana) (optional `phantom-connect-wallet` module)
 - **Chain-scoped signing** -- `sdk.solana` and `sdk.ethereum` with chain-specific methods
 - **Solana** -- `signMessage`, `signTransaction`, `signAndSendTransaction`, `signAllTransactions`
 - **Ethereum** -- `personalSign` (EIP-191), `signTypedData` (EIP-712), `signTransaction`, `signAndSendTransaction`
@@ -132,6 +133,59 @@ let txHash = try await phantom.solana.signAndSendTransaction(base64Transaction: 
 }
 ```
 
+## Wallet Connector (Phantom App Deeplinks)
+
+The optional `phantom-connect-wallet` module adds support for connecting and signing via the installed Phantom mobile app. All communication happens through encrypted deeplinks using the [Phantom deeplink protocol](https://docs.phantom.com/solana/integrating-phantom/deeplinks-solana). Solana only.
+
+### Android
+
+```kotlin
+import dev.bmcreations.phantom.connect.wallet.PhantomWalletConnector
+import dev.bmcreations.phantom.connect.wallet.createDeeplinkLauncher
+
+val walletConnector = PhantomWalletConnector(
+    deeplinkLauncher = createDeeplinkLauncher(applicationContext),
+    appUrl = "https://your-app.example.com",
+    callbackScheme = "myapp",
+)
+
+val sdk = PhantomSdk.create(
+    config = PhantomSdkConfig(/* ... */),
+    oauthLauncher = createOAuthLauncher(this),
+    connectors = listOf(walletConnector),
+)
+```
+
+### iOS (Swift)
+
+The wallet types are included in the `PhantomConnectSDK` package -- no separate dependency.
+
+```swift
+import PhantomConnectSDK
+
+let connector = PhantomWalletConnector(
+    deeplinkLauncher: createDeeplinkLauncher(),
+    appUrl: "https://your-app.example.com",
+    callbackScheme: "myapp"
+)
+
+let phantom = PhantomClient(
+    appId: "your-app-id",
+    redirectScheme: "myapp",
+    redirectUri: "myapp://phantom-callback",
+    connectors: [connector]
+)
+
+// Handle deeplink callbacks in your SwiftUI app:
+.onOpenURL { url in
+    IosDeeplinkLauncher.handleCallback(url: url)
+}
+```
+
+When connectors are provided, the connect sheet automatically includes them — each connector's `callToAction` (default: `"Continue with {displayName}"`) is used as the button label. You can also connect directly via `sdk.connect(walletConnector)` / `phantom.connect(connector:)`.
+
+For full details, see the [wallet module README](phantom-connect-wallet/README.md).
+
 ## API Reference
 
 ### Configuration
@@ -157,6 +211,7 @@ PhantomSdkConfig(
 |--------|-------------|
 | `connect()` | Show the connect sheet and let the user choose a provider |
 | `connect(provider)` | Connect with a specific provider directly |
+| `connect(connector)` | Connect with a wallet connector directly (e.g. Phantom app deeplink) |
 | `createAppWallet()` | Create a programmatic app wallet (no OAuth) |
 | `logout()` | Clear session and keys |
 
@@ -248,10 +303,14 @@ let phantom = PhantomClient(
 ## Architecture
 
 ```
-phantom-connect/         KMP library (commonMain, androidMain, iosMain)
+phantom-connect/         Core KMP library (commonMain, androidMain, iosMain)
   commonMain/            Shared business logic, models, Compose UI
   androidMain/           EncryptedSharedPreferences, Custom Tabs OAuth
   iosMain/               Keychain storage, ASWebAuthenticationSession OAuth
+phantom-connect-wallet/  Optional wallet connector module (deeplink protocol)
+  commonMain/            X25519 key exchange, NaCl encryption, URL building
+  androidMain/           Intent-based deeplink launching
+  iosMain/               UIApplication.openURL-based deeplink launching
 Internal/                iOS SPM distribution (Swift wrapper + XCFramework)
 sample-android/          Android sample app
 sample-ios/              iOS sample app

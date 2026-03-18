@@ -3,7 +3,7 @@ package dev.bmcreations.phantom.connect
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import dev.bmcreations.phantom.connect.internal.PhantomPendingRedirect
+import dev.bmcreations.phantom.connect.internal.ui.PhantomPendingRedirect
 import kotlinx.coroutines.CompletableDeferred
 
 /**

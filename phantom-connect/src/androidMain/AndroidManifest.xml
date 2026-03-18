@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
-            android:name="dev.bmcreations.phantom.connect.internal.PhantomConnectSheetActivity"
+            android:name="dev.bmcreations.phantom.connect.internal.ui.PhantomConnectSheetActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:exported="false" />
     </application>

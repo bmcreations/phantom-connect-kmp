@@ -58,13 +58,16 @@ sealed interface Chain {
 /** OAuth provider for social login. */
 sealed interface AuthProvider {
     val id: String
+    val displayName: String
 
     data object Google : AuthProvider {
         override val id = "google"
+        override val displayName = "Google"
     }
 
     data object Apple : AuthProvider {
         override val id = "apple"
+        override val displayName = "Apple"
     }
 
     companion object {
@@ -95,6 +98,12 @@ sealed interface WalletType {
     data object AppWallet : WalletType {
         override val id = "app_wallet"
     }
+
+    @Serializable
+    @SerialName("deeplink_wallet")
+    data object DeeplinkWallet : WalletType {
+        override val id = "deeplink_wallet"
+    }
 }
 
 // ── Wallet Address ──
@@ -124,6 +133,7 @@ data class PhantomSession(
     val authenticatorExpiresAt: Long,
     val walletType: WalletType,
     val username: String,
+    val connectorState: String? = null,
 ) {
     /** Convenience to get the typed provider, or null for non-social sessions (e.g. app wallet). */
     val provider: AuthProvider? get() = try { AuthProvider.fromId(providerId) } catch (_: Exception) { null }

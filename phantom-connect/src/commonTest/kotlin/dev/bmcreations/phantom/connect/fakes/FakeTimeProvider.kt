@@ -1,6 +1,6 @@
 package dev.bmcreations.phantom.connect.fakes
 
-import dev.bmcreations.phantom.connect.internal.TimeProvider
+import dev.bmcreations.phantom.connect.internal.platform.TimeProvider
 import kotlinx.datetime.Instant
 import kotlin.time.Duration
 

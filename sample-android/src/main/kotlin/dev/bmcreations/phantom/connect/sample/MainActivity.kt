@@ -3,6 +3,7 @@ package dev.bmcreations.phantom.connect.sample
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
@@ -20,14 +21,24 @@ import dev.bmcreations.phantom.connect.LogLevel
 import dev.bmcreations.phantom.connect.PhantomClient
 import dev.bmcreations.phantom.connect.PhantomSdkConfig
 import dev.bmcreations.phantom.connect.PhantomSession
+import dev.bmcreations.phantom.connect.WalletConnector
+import dev.bmcreations.phantom.connect.createOAuthLauncher
 import dev.bmcreations.phantom.connect.sample.screens.HomeScreen
 import dev.bmcreations.phantom.connect.sample.screens.WalletOperationsScreen
+import dev.bmcreations.phantom.connect.wallet.PhantomWalletConnector
+import dev.bmcreations.phantom.connect.wallet.createDeeplinkLauncher
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val walletConnector = PhantomWalletConnector(
+            deeplinkLauncher = createDeeplinkLauncher(applicationContext),
+            appUrl = "https://phantom-kmp-sample.app",
+            callbackScheme = "phantomsample",
+        )
 
         val phantom = PhantomClient.create(
             config = PhantomSdkConfig(
@@ -46,19 +57,20 @@ class MainActivity : ComponentActivity() {
                 }
             ),
             oauthLauncher = createOAuthLauncher(this),
+            connectors = listOf(walletConnector),
         )
 
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
-                PhantomSampleApp(phantom)
+                PhantomSampleApp(phantom, walletConnector)
             }
         }
     }
 }
 
 @Composable
-private fun PhantomSampleApp(sdk: PhantomClient) {
+private fun PhantomSampleApp(sdk: PhantomClient, walletConnector: WalletConnector) {
     var session by remember { mutableStateOf<PhantomSession?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf("home") }
@@ -88,6 +100,20 @@ private fun PhantomSampleApp(sdk: PhantomClient) {
         }
     }
 
+    fun handleConnectPhantom() {
+        error = null
+        scope.launch {
+            when (val result = sdk.connect(walletConnector)) {
+                is ConnectResult.Success -> session = result.session
+                is ConnectResult.Cancelled -> {
+                    session = sdk.getSession()
+                    if (session == null) screen = "home"
+                }
+                is ConnectResult.Error -> error = result.cause.message
+            }
+        }
+    }
+
     fun handleDisconnect() {
         scope.launch {
             sdk.logout()
@@ -104,6 +130,7 @@ private fun PhantomSampleApp(sdk: PhantomClient) {
             error = error,
             onConnect = { handleConnect() },
             onConnectGoogle = { handleConnect(AuthProvider.Google) },
+            onConnectPhantom = { handleConnectPhantom() },
             onOpenWallet = { screen = "wallet" },
             onDisconnect = { handleDisconnect() },
         )
@@ -113,6 +140,10 @@ private fun PhantomSampleApp(sdk: PhantomClient) {
             onBack = { screen = "home" },
             onDisconnect = { handleDisconnect() },
         )
+    }
+
+    BackHandler(screen == "wallet") {
+        screen = "home"
     }
 }
 

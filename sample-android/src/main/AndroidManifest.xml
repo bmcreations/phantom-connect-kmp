@@ -32,5 +32,19 @@
                 <data android:scheme="phantomsample" android:host="phantom-callback" />
             </intent-filter>
         </activity>
+
+        <!-- Phantom Wallet deeplink callback activity -->
+        <activity
+            android:name="dev.bmcreations.phantom.connect.wallet.PhantomWalletCallbackActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="phantomsample" android:host="phantom-wallet-callback" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

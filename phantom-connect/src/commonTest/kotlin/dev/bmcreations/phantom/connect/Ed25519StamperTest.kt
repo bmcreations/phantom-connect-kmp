@@ -2,9 +2,9 @@ package dev.bmcreations.phantom.connect
 
 import com.ionspin.kotlin.crypto.LibsodiumInitializer
 import dev.bmcreations.phantom.connect.fakes.FakeEd25519KeyStore
-import dev.bmcreations.phantom.connect.internal.Ed25519Stamper
-import dev.bmcreations.phantom.connect.internal.KeyStoreTags
-import dev.bmcreations.phantom.connect.internal.fromBase64Url
+import dev.bmcreations.phantom.connect.internal.crypto.Ed25519Stamper
+import dev.bmcreations.phantom.connect.internal.crypto.KeyStoreTags
+import dev.bmcreations.phantom.connect.internal.crypto.fromBase64Url
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

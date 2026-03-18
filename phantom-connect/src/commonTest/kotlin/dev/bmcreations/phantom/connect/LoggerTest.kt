@@ -1,6 +1,6 @@
 package dev.bmcreations.phantom.connect
 
-import dev.bmcreations.phantom.connect.internal.SdkLogger
+import dev.bmcreations.phantom.connect.internal.platform.SdkLogger
 import kotlin.test.*
 
 class LoggerTest {

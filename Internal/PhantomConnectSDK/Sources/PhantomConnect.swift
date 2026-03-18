@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import PhantomConnectKMP
+@_exported import PhantomConnectWalletKMP
 
 /// Swift-idiomatic wrapper around the KMP PhantomSdk.
 /// All logic lives in PhantomSdk.kt — this file is a thin bridge.
@@ -20,6 +20,7 @@ public class PhantomClient {
         appId: String,
         redirectScheme: String,
         redirectUri: String,
+        connectors: [any WalletConnector] = [],
         network: ChainNetwork = .mainnet,
         persistSession: Bool = true,
         logger: PhantomLogHandler? = nil
@@ -28,6 +29,7 @@ public class PhantomClient {
             appId: appId,
             redirectScheme: redirectScheme,
             redirectUri: redirectUri,
+            connectors: connectors,
             baseUrl: "https://api.phantom.app",
             loginBaseUrl: "https://connect.phantom.app",
             network: network,
@@ -42,12 +44,13 @@ public class PhantomClient {
         appId: String,
         redirectScheme: String,
         redirectUri: String,
+        connectors: [any WalletConnector] = [],
         baseUrl: String,
         loginBaseUrl: String,
         network: ChainNetwork = .mainnet,
         persistSession: Bool = true,
         logger: PhantomLogHandler? = nil,
-        oauthLauncher: (any PhantomConnectKMP.OAuthLauncher)? = nil
+        oauthLauncher: (any OAuthLauncher)? = nil
     ) {
         let kmpLogger: PhantomLogger? = logger.map { handler in
             PhantomLoggerImpl(handler: handler)
@@ -66,7 +69,7 @@ public class PhantomClient {
             sdkVersion: "0.1.0"
         )
         let launcher = oauthLauncher ?? IosOAuthLauncher()
-        sdk = PhantomSdk.companion.create(config: config, oauthLauncher: launcher)
+        sdk = PhantomSdk.companion.create(config: config, oauthLauncher: launcher, connectors: connectors)
     }
 
     // MARK: - Theme
@@ -116,11 +119,21 @@ public class PhantomClient {
     /// Connect with a specific provider directly (bypasses the connect modal).
     public func connect(provider: PhantomAuthProvider) async -> PhantomClientResult {
         do {
-            let kmpProvider: any PhantomConnectKMP.AuthProvider = switch provider {
+            let kmpProvider: any AuthProvider = switch provider {
             case .google: AuthProviderGoogle.shared
             case .apple: AuthProviderApple.shared
             }
             let result = try await sdk.connect(provider: kmpProvider)
+            return mapConnectResult(result)
+        } catch {
+            return .error(error)
+        }
+    }
+
+    /// Connect with a wallet connector directly (bypasses the connect sheet).
+    public func connect(connector: any WalletConnector) async -> PhantomClientResult {
+        do {
+            let result = try await sdk.connectWithWallet(connector: connector)
             return mapConnectResult(result)
         } catch {
             return .error(error)
@@ -229,7 +242,13 @@ public struct PhantomWalletSession {
         self.accountDerivationIndex = Int(kmp.accountDerivationIndex)
         self.authUserId = kmp.authUserId
         self.sessionId = kmp.sessionId
-        self.walletType = kmp.walletType is WalletTypeUserWallet ? .userWallet : .appWallet
+        if kmp.walletType is WalletTypeUserWallet {
+            self.walletType = .userWallet
+        } else if kmp.walletType is WalletTypeDeeplinkWallet {
+            self.walletType = .deeplinkWallet
+        } else {
+            self.walletType = .appWallet
+        }
     }
 }
 
@@ -242,6 +261,7 @@ public struct WalletAddressInfo {
 public enum PhantomWalletType {
     case userWallet
     case appWallet
+    case deeplinkWallet
 }
 
 public enum PhantomAuthProvider {
@@ -265,7 +285,7 @@ public enum PhantomChain {
     case solana
     case ethereum
 
-    var kmp: any PhantomConnectKMP.Chain {
+    var kmp: any Chain {
         switch self {
         case .solana: ChainSolana.shared
         case .ethereum: ChainEthereum.shared
@@ -278,7 +298,7 @@ public enum ChainNetwork {
     case devnet
     case testnet
 
-    var kmp: PhantomConnectKMP.Network {
+    var kmp: Network {
         switch self {
         case .mainnet: .mainnet
         case .devnet: .devnet
@@ -291,14 +311,14 @@ public enum ChainNetwork {
 public typealias PhantomLogHandler = (_ level: String, _ tag: String, _ message: String) -> Void
 
 /// Bridges Swift closure to KMP PhantomLogger interface.
-private class PhantomLoggerImpl: PhantomConnectKMP.PhantomLogger {
+private class PhantomLoggerImpl: PhantomLogger {
     let handler: PhantomLogHandler
 
     init(handler: @escaping PhantomLogHandler) {
         self.handler = handler
     }
 
-    func log(level: PhantomConnectKMP.LogLevel, tag: String, message: String) {
+    func log(level: LogLevel, tag: String, message: String) {
         handler(level.name, tag, message)
     }
 }
@@ -371,5 +391,28 @@ public struct EthereumChain {
     /// Sign and submit a transaction.
     public func signAndSendTransaction(base64Transaction: String) async throws -> String {
         return try await sdk.ethereum.signAndSendTransaction(transactionBase64: base64Transaction)
+    }
+}
+
+// MARK: - DeeplinkLauncher factory
+
+/// Creates a platform-appropriate ``DeeplinkLauncher`` for iOS.
+///
+/// This is the Swift-idiomatic equivalent of the Kotlin `createDeeplinkLauncher()` factory.
+public func createDeeplinkLauncher() -> any DeeplinkLauncher {
+    IosDeeplinkLauncher()
+}
+
+// MARK: - IosDeeplinkLauncher Swift helpers
+
+extension IosDeeplinkLauncher {
+    /// Call from your `onOpenURL` handler when a deeplink callback is received.
+    public static func handleCallback(url: URL) {
+        companion.handleCallback(url: url.absoluteString)
+    }
+
+    /// Call if the user returns to the app without completing the deeplink flow.
+    public static func handleCancellation() {
+        companion.handleCancellation()
     }
 }

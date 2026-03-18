@@ -1,7 +1,7 @@
 package dev.bmcreations.phantom.connect.fakes
 
 import dev.bmcreations.phantom.connect.PhantomSession
-import dev.bmcreations.phantom.connect.internal.SessionStoreProvider
+import dev.bmcreations.phantom.connect.internal.auth.SessionStoreProvider
 
 internal class FakeSessionStore : SessionStoreProvider {
     var stored: PhantomSession? = null

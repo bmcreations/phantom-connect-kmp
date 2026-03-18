@@ -3,6 +3,7 @@ import PhantomConnectSDK
 
 struct HomeView: View {
     let phantom: PhantomClient
+    let walletConnector: PhantomWalletConnector?
     @Binding var session: PhantomWalletSession?
     @Binding var error: String?
     let onOpenWallet: () -> Void
@@ -176,6 +177,20 @@ struct HomeView: View {
                                     .foregroundColor(.white)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
+                            if walletConnector != nil {
+                                Spacer().frame(height: 8)
+                                Button {
+                                    handleConnectPhantom()
+                                } label: {
+                                    Text("Connect with Phantom")
+                                        .fontWeight(.semibold)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(PhantomColors.indigo)
+                                        .foregroundColor(.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
                         }
                     }
 
@@ -232,7 +247,22 @@ struct HomeView: View {
             case .success(let walletSession):
                 session = walletSession
             case .cancelled:
-                // Re-check session (user may have disconnected via modal)
+                session = await phantom.getSession()
+            case .error(let err):
+                error = err.localizedDescription
+            }
+        }
+    }
+
+    private func handleConnectPhantom() {
+        guard let walletConnector else { return }
+        error = nil
+        Task {
+            let result = await phantom.connect(connector: walletConnector)
+            switch result {
+            case .success(let walletSession):
+                session = walletSession
+            case .cancelled:
                 session = await phantom.getSession()
             case .error(let err):
                 error = err.localizedDescription

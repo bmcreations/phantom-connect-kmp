@@ -3,7 +3,10 @@ package dev.bmcreations.phantom.connect
 import com.ionspin.kotlin.crypto.LibsodiumInitializer
 import dev.bmcreations.phantom.connect.fakes.FakeEd25519KeyStore
 import dev.bmcreations.phantom.connect.fakes.FakeTimeProvider
-import dev.bmcreations.phantom.connect.internal.*
+import dev.bmcreations.phantom.connect.internal.crypto.Ed25519Stamper
+import dev.bmcreations.phantom.connect.internal.crypto.KeyStoreTags
+import dev.bmcreations.phantom.connect.internal.network.PhantomApiException
+import dev.bmcreations.phantom.connect.internal.network.PhantomClient
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -34,12 +37,12 @@ class PhantomClientTest {
         timeProvider = FakeTimeProvider()
     }
 
-    private fun createClient(mockEngine: MockEngine): dev.bmcreations.phantom.connect.internal.PhantomClient {
+    private fun createClient(mockEngine: MockEngine): PhantomClient {
         val httpClient = HttpClient(mockEngine) {
             install(ContentNegotiation) { json(json) }
         }
         val stamper = Ed25519Stamper(keyStore)
-        return dev.bmcreations.phantom.connect.internal.PhantomClient(httpClient, stamper, config, timeProvider)
+        return PhantomClient(httpClient, stamper, config, timeProvider)
     }
 
     @Test

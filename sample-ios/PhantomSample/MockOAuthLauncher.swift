@@ -1,11 +1,11 @@
 import Foundation
-import PhantomConnectKMP
+import PhantomConnectSDK
 
 /// OAuth launcher for E2E testing that bypasses ASWebAuthenticationSession.
 ///
 /// Mirrors the Android MockOAuthLauncher: hits the mock server's login endpoint
 /// to verify it's running, then returns hardcoded mock redirect params.
-class MockOAuthLauncher: PhantomConnectKMP.OAuthLauncher {
+class MockOAuthLauncher: OAuthLauncher {
 
     func launch(url: String, callbackScheme: String) async throws -> OAuthResult {
         // Verify the mock server is responding

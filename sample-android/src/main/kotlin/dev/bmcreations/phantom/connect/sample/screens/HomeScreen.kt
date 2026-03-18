@@ -42,6 +42,7 @@ import dev.bmcreations.phantom.connect.PhantomSdk
 import dev.bmcreations.phantom.connect.PhantomSession
 import dev.bmcreations.phantom.connect.sample.components.SectionCard
 import dev.bmcreations.phantom.connect.sample.components.WalletInfoSection
+import dev.bmcreations.phantom.connect.sample.theme.PhantomIndigo
 import dev.bmcreations.phantom.connect.sample.theme.PhantomPurple
 import dev.bmcreations.phantom.connect.sample.theme.PhantomRed
 
@@ -53,6 +54,7 @@ internal fun HomeScreen(
     error: String?,
     onConnect: () -> Unit,
     onConnectGoogle: () -> Unit,
+    onConnectPhantom: () -> Unit,
     onOpenWallet: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -240,6 +242,15 @@ internal fun HomeScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = PhantomRed),
                     ) {
                         Text("Connect with Google", color = Color.White)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = onConnectPhantom,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PhantomIndigo),
+                    ) {
+                        Text("Connect with Phantom App", color = Color.White)
                     }
                 }
             }

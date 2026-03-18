@@ -1,5 +1,6 @@
 package dev.bmcreations.phantom.connect.sample.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -258,7 +259,7 @@ internal fun WalletOperationsScreen(
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = PhantomIndigo,
                     ),
-                    border = androidx.compose.foundation.BorderStroke(
+                    border = BorderStroke(
                         1.dp,
                         if (!sendingTx && hasBalance) PhantomIndigo else Color.Gray,
                     ),
