@@ -8,7 +8,11 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.android.library)
+    alias(libs.plugins.maven.publish)
 }
+
+group = "dev.bmcreations"
+version = project.findProperty("VERSION_NAME")?.toString() ?: "0.0.0-SNAPSHOT"
 
 kotlin {
     applyDefaultHierarchyTemplate()
@@ -76,5 +80,34 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+
+    pom {
+        name.set("Phantom Connect Wallet SDK")
+        description.set("Kotlin Multiplatform SDK for Phantom wallet app deeplink integration")
+        url.set("https://github.com/bmcreations/phantom-connect-kmp")
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://opensource.org/licenses/MIT")
+            }
+        }
+        developers {
+            developer {
+                id.set("bmcreations")
+                name.set("bmcreations")
+                url.set("https://github.com/bmcreations")
+            }
+        }
+        scm {
+            url.set("https://github.com/bmcreations/phantom-connect-kmp")
+            connection.set("scm:git:git://github.com/bmcreations/phantom-connect-kmp.git")
+            developerConnection.set("scm:git:ssh://git@github.com/bmcreations/phantom-connect-kmp.git")
+        }
     }
 }
