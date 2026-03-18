@@ -6,6 +6,7 @@ struct HomeView: View {
     let walletConnector: PhantomWalletConnector?
     @Binding var session: PhantomWalletSession?
     @Binding var error: String?
+    @Binding var persistSession: Bool
     let onOpenWallet: () -> Void
     let onDisconnect: () -> Void
 
@@ -100,6 +101,24 @@ struct HomeView: View {
                                 }
                             }
                         }
+                    }
+
+                    // Session Persistence
+                    SectionCard {
+                        Text("Session Persistence")
+                            .font(.headline)
+                        Spacer().frame(height: 4)
+                        Text(persistSession
+                             ? "Sessions are saved to encrypted storage and restored on app restart."
+                             : "Sessions are kept in memory only and lost when the app restarts.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer().frame(height: 12)
+                        Toggle(
+                            persistSession ? "Persist sessions" : "In-memory only",
+                            isOn: $persistSession
+                        )
+                        .tint(PhantomColors.purple)
                     }
 
                     if isConnected {
@@ -228,9 +247,6 @@ struct HomeView: View {
             .toolbarBackground(PhantomColors.purple, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .task {
-                session = await phantom.getSession()
-            }
         }
     }
 

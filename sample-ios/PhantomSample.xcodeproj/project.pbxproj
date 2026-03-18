@@ -189,7 +189,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cd \"$SRCROOT/..\"\n./gradlew :phantom-connect-wallet:assemblePhantomConnectWalletKMPDebugXCFramework -x test\n";
+			shellScript = "export JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null || echo \"$JAVA_HOME\")\nexport PATH=\"$JAVA_HOME/bin:$PATH\"\ncd \"$SRCROOT/..\"\n./gradlew :phantom-connect-wallet:assemblePhantomConnectWalletKMPDebugXCFramework -x test\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

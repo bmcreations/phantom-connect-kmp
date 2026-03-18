@@ -1,5 +1,6 @@
 package dev.bmcreations.phantom.connect.sample
 
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -40,43 +41,66 @@ class MainActivity : ComponentActivity() {
             callbackScheme = "phantomsample",
         )
 
-        val phantom = PhantomClient.create(
-            config = PhantomSdkConfig(
-                appId = BuildConfig.PHANTOM_APP_ID,
-                redirectScheme = "phantomsample",
-                redirectUri = "phantomsample://phantom-callback",
-                baseUrl = BuildConfig.PHANTOM_BASE_URL,
-                loginBaseUrl = BuildConfig.PHANTOM_LOGIN_BASE_URL,
-                logger = { level, tag, message ->
-                    when (level) {
-                        LogLevel.DEBUG -> Log.d(tag, message)
-                        LogLevel.INFO -> Log.i(tag, message)
-                        LogLevel.WARN -> Log.w(tag, message)
-                        LogLevel.ERROR -> Log.e(tag, message)
-                    }
-                }
-            ),
-            oauthLauncher = createOAuthLauncher(this),
-            connectors = listOf(walletConnector),
-        )
+        val oauthLauncher = createOAuthLauncher(this)
+        val prefs = getSharedPreferences("phantom_sample", Context.MODE_PRIVATE)
 
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
-                PhantomSampleApp(phantom, walletConnector)
+                var persistSession by remember {
+                    mutableStateOf(prefs.getBoolean("persist_session", true))
+                }
+
+                val sdk = remember(persistSession) {
+                    PhantomClient.create(
+                        config = PhantomSdkConfig(
+                            appId = BuildConfig.PHANTOM_APP_ID,
+                            redirectScheme = "phantomsample",
+                            redirectUri = "phantomsample://phantom-callback",
+                            baseUrl = BuildConfig.PHANTOM_BASE_URL,
+                            loginBaseUrl = BuildConfig.PHANTOM_LOGIN_BASE_URL,
+                            persistSession = persistSession,
+                            logger = { level, tag, message ->
+                                when (level) {
+                                    LogLevel.DEBUG -> Log.d(tag, message)
+                                    LogLevel.INFO -> Log.i(tag, message)
+                                    LogLevel.WARN -> Log.w(tag, message)
+                                    LogLevel.ERROR -> Log.e(tag, message)
+                                }
+                            }
+                        ),
+                        oauthLauncher = oauthLauncher,
+                        connectors = listOf(walletConnector),
+                    )
+                }
+
+                PhantomSampleApp(
+                    sdk = sdk,
+                    walletConnector = walletConnector,
+                    persistSession = persistSession,
+                    onPersistSessionChanged = {
+                        prefs.edit().putBoolean("persist_session", it).apply()
+                        persistSession = it
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun PhantomSampleApp(sdk: PhantomClient, walletConnector: WalletConnector) {
+private fun PhantomSampleApp(
+    sdk: PhantomClient,
+    walletConnector: WalletConnector,
+    persistSession: Boolean,
+    onPersistSessionChanged: (Boolean) -> Unit,
+) {
     var session by remember { mutableStateOf<PhantomSession?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf("home") }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(sdk) {
         try {
             session = sdk.getSession()
         } catch (e: Exception) {
@@ -128,6 +152,8 @@ private fun PhantomSampleApp(sdk: PhantomClient, walletConnector: WalletConnecto
             sdk = sdk,
             session = session,
             error = error,
+            persistSession = persistSession,
+            onPersistSessionChanged = onPersistSessionChanged,
             onConnect = { handleConnect() },
             onConnectGoogle = { handleConnect(AuthProvider.Google) },
             onConnectPhantom = { handleConnectPhantom() },

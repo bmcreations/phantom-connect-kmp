@@ -23,6 +23,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -52,6 +54,8 @@ internal fun HomeScreen(
     sdk: PhantomSdk,
     session: PhantomSession?,
     error: String?,
+    persistSession: Boolean,
+    onPersistSessionChanged: (Boolean) -> Unit,
     onConnect: () -> Unit,
     onConnectGoogle: () -> Unit,
     onConnectPhantom: () -> Unit,
@@ -172,6 +176,38 @@ internal fun HomeScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // Session Persistence card
+            SectionCard {
+                Text(
+                    text = "Session Persistence",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (persistSession) "Sessions are saved to encrypted storage and restored on app restart."
+                    else "Sessions are kept in memory only and lost when the app restarts.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (persistSession) "Persist sessions" else "In-memory only",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Switch(
+                        checked = persistSession,
+                        onCheckedChange = onPersistSessionChanged,
+                        colors = SwitchDefaults.colors(checkedTrackColor = PhantomPurple),
+                    )
                 }
             }
 
