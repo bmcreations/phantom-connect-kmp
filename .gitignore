@@ -2,8 +2,6 @@
 .gradle/
 build/
 Internal/PhantomConnectSDK/.build
-!gradle/wrapper/gradle-wrapper.jar
-
 # IDE
 .idea/
 *.iml
@@ -13,6 +11,7 @@ Internal/PhantomConnectSDK/.build
 .kotlin/
 *.class
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 *.aar
 
