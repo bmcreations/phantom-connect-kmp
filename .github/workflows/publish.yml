@@ -74,10 +74,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           CHECKSUM: ${{ steps.package.outputs.checksum }}
         run: |
-          # Copy Swift wrapper sources
+          # Copy Swift wrapper sources and README
           rm -rf phantom-connect-ios/Sources
           mkdir -p phantom-connect-ios/Sources
           cp Internal/PhantomConnectSDK/Sources/*.swift phantom-connect-ios/Sources/
+          cp Internal/PhantomConnectSDK/README.md phantom-connect-ios/README.md
 
           # Generate Package.swift
           cat > phantom-connect-ios/Package.swift << SWIFT
