@@ -3,6 +3,100 @@ package dev.bmcreations.phantom.connect
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+// ── Algorithm ──
+
+/** Cryptographic algorithm used for signing. */
+enum class Algorithm(val value: String) {
+    Ed25519("Ed25519"),
+    Secp256k1("Secp256k1"),
+    Secp256r1("secp256r1"),
+}
+
+// ── Network Identifiers ──
+
+/** CAIP-2 network identifiers matching upstream @phantom/constants. */
+object NetworkId {
+    // Solana
+    const val SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+    const val SOLANA_DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+    const val SOLANA_TESTNET = "solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z"
+
+    // Ethereum
+    const val ETHEREUM_MAINNET = "eip155:1"
+    const val ETHEREUM_SEPOLIA = "eip155:11155111"
+
+    // Polygon
+    const val POLYGON_MAINNET = "eip155:137"
+    const val POLYGON_AMOY = "eip155:80002"
+
+    // Base
+    const val BASE_MAINNET = "eip155:8453"
+    const val BASE_SEPOLIA = "eip155:84532"
+
+    // Arbitrum
+    const val ARBITRUM_MAINNET = "eip155:42161"
+    const val ARBITRUM_SEPOLIA = "eip155:421614"
+
+    // Monad
+    const val MONAD_MAINNET = "eip155:143"
+    const val MONAD_TESTNET = "eip155:10143"
+
+    // Bitcoin
+    const val BITCOIN_MAINNET = "bip122:000000000019d6689c085ae165831e93"
+    const val BITCOIN_TESTNET = "bip122:000000000933ea01ad0ee984209779ba"
+
+    // Sui
+    const val SUI_MAINNET = "sui:mainnet"
+    const val SUI_TESTNET = "sui:4c78adac"
+    const val SUI_DEVNET = "sui:devnet"
+
+    // Hypercore
+    const val HYPERCORE_MAINNET = "eip155:999"
+    const val HYPERCORE_TESTNET = "eip155:9999"
+
+    /** Resolve the mainnet CAIP-2 ID for a [Network] and [Chain]. */
+    fun forChainAndNetwork(chain: Chain, network: Network): String = when (chain) {
+        is Chain.Solana -> when (network) {
+            Network.Mainnet -> SOLANA_MAINNET
+            Network.Devnet -> SOLANA_DEVNET
+            Network.Testnet -> SOLANA_TESTNET
+        }
+        is Chain.Ethereum -> when (network) {
+            Network.Mainnet -> ETHEREUM_MAINNET
+            Network.Testnet, Network.Devnet -> ETHEREUM_SEPOLIA
+        }
+        is Chain.Polygon -> when (network) {
+            Network.Mainnet -> POLYGON_MAINNET
+            Network.Testnet, Network.Devnet -> POLYGON_AMOY
+        }
+        is Chain.Base -> when (network) {
+            Network.Mainnet -> BASE_MAINNET
+            Network.Testnet, Network.Devnet -> BASE_SEPOLIA
+        }
+        is Chain.Arbitrum -> when (network) {
+            Network.Mainnet -> ARBITRUM_MAINNET
+            Network.Testnet, Network.Devnet -> ARBITRUM_SEPOLIA
+        }
+        is Chain.Monad -> when (network) {
+            Network.Mainnet -> MONAD_MAINNET
+            Network.Testnet, Network.Devnet -> MONAD_TESTNET
+        }
+        is Chain.Bitcoin -> when (network) {
+            Network.Mainnet -> BITCOIN_MAINNET
+            Network.Testnet, Network.Devnet -> BITCOIN_TESTNET
+        }
+        is Chain.Sui -> when (network) {
+            Network.Mainnet -> SUI_MAINNET
+            Network.Testnet -> SUI_TESTNET
+            Network.Devnet -> SUI_DEVNET
+        }
+        is Chain.Hypercore -> when (network) {
+            Network.Mainnet -> HYPERCORE_MAINNET
+            Network.Testnet, Network.Devnet -> HYPERCORE_TESTNET
+        }
+    }
+}
+
 // ── Chain & Address Types ──
 
 /**
@@ -72,7 +166,7 @@ sealed interface Chain {
         override val curve = "Secp256k1"
         override val addressFormat = "Bitcoin"
         override val networkId = "bip122:000000000019d6689c085ae165831e93"
-        override fun derivationPath(accountIndex: Int) = "m/84'/0'/0'/0"
+        override fun derivationPath(accountIndex: Int) = "m/84'/0'/$accountIndex'/0"
     }
 
     data object Sui : Chain {
@@ -83,8 +177,16 @@ sealed interface Chain {
         override fun derivationPath(accountIndex: Int) = "m/44'/784'/0'/0'/0'"
     }
 
+    data object Hypercore : Chain {
+        override val id = "hypercore"
+        override val curve = "Secp256k1"
+        override val addressFormat = "Ethereum"
+        override val networkId = "eip155:999"
+        override fun derivationPath(accountIndex: Int) = "m/44'/60'/0'/0/$accountIndex"
+    }
+
     companion object {
-        val all: List<Chain> = listOf(Solana, Ethereum, Polygon, Base, Arbitrum, Monad, Bitcoin, Sui)
+        val all: List<Chain> = listOf(Solana, Ethereum, Polygon, Base, Arbitrum, Monad, Bitcoin, Sui, Hypercore)
 
         fun fromId(id: String): Chain = when (id) {
             Solana.id -> Solana
@@ -95,6 +197,7 @@ sealed interface Chain {
             Monad.id -> Monad
             Bitcoin.id -> Bitcoin
             Sui.id -> Sui
+            Hypercore.id -> Hypercore
             else -> throw IllegalArgumentException("Unknown chain: $id")
         }
 
@@ -131,12 +234,24 @@ sealed interface AuthProvider {
         override val displayName = "Apple"
     }
 
+    data object Phantom : AuthProvider {
+        override val id = "phantom"
+        override val displayName = "Phantom"
+    }
+
+    data object Device : AuthProvider {
+        override val id = "device"
+        override val displayName = "Device"
+    }
+
     companion object {
         val all: List<AuthProvider> = listOf(Google, Apple)
 
         fun fromId(id: String): AuthProvider = when (id) {
             Google.id -> Google
             Apple.id -> Apple
+            Phantom.id -> Phantom
+            Device.id -> Device
             else -> throw IllegalArgumentException("Unknown provider: $id")
         }
     }
@@ -186,6 +301,8 @@ enum class SessionStatus {
     Pending,
     /** Session is fully established with wallet and organization. */
     Completed,
+    /** Session establishment failed terminally. */
+    Failed,
 }
 
 // ── Session ──
@@ -312,5 +429,5 @@ data class PhantomSdkConfig(
     val network: Network = Network.Mainnet,
     val persistSession: Boolean = true,
     val logger: PhantomLogger? = null,
-    internal val sdkVersion: String = "0.1.0",
+    internal val sdkVersion: String = "2.0.2",
 )

@@ -22,4 +22,8 @@ internal class FakeSessionStore : SessionStoreProvider {
         clearCount++
         stored = null
     }
+
+    var shouldClearPreviousSession = false
+    override suspend fun saveShouldClearPreviousSession(shouldClear: Boolean) { shouldClearPreviousSession = shouldClear }
+    override suspend fun loadShouldClearPreviousSession(): Boolean = shouldClearPreviousSession
 }

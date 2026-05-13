@@ -7,6 +7,8 @@ import dev.bmcreations.phantom.connect.internal.crypto.Stamper
 import dev.bmcreations.phantom.connect.internal.platform.SdkLogger
 import dev.bmcreations.phantom.connect.internal.platform.SystemTimeProvider
 import dev.bmcreations.phantom.connect.internal.platform.TimeProvider
+import dev.bmcreations.phantom.connect.internal.platform.getPlatform
+import dev.bmcreations.phantom.connect.internal.platform.sdkType
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -31,6 +33,14 @@ internal class PhantomClient(
 
     private val walletsUrl get() = "${config.baseUrl}/v1/wallets"
     private val kmsRpcUrl get() = "${config.baseUrl}/v1/wallets/kms/rpc"
+
+    private fun HttpRequestBuilder.applyCommonHeaders() {
+        header("x-app-id", config.appId)
+        header("x-api-version", DEFAULT_KMS_API_VERSION)
+        header("x-phantom-sdk-type", sdkType)
+        header("x-phantom-sdk-version", config.sdkVersion)
+        header("x-phantom-platform", getPlatform())
+    }
 
     /** Update the Authorization header (e.g. "Bearer eyJ...") for auth2 flow. */
     fun setAuthorizationHeader(value: String?) {
@@ -69,8 +79,7 @@ internal class PhantomClient(
         val response = httpClient.post(url) {
             contentType(ContentType.Application.Json)
             header("X-Phantom-Stamp", stamp)
-            header("x-app-id", config.appId)
-            header("x-api-version", DEFAULT_KMS_API_VERSION)
+            applyCommonHeaders()
             authorizationHeader?.let { header("Authorization", it) }
             authUserId?.let { header("x-auth-user-id", it) }
             xRpcMethod?.let { header("X-Rpc-Method", it) }
@@ -117,8 +126,7 @@ internal class PhantomClient(
         val response = httpClient.post(url) {
             contentType(ContentType.Application.Json)
             header("X-Phantom-Stamp", stamp)
-            header("x-app-id", config.appId)
-            header("x-api-version", DEFAULT_KMS_API_VERSION)
+            applyCommonHeaders()
             authorizationHeader?.let { header("Authorization", it) }
             authUserId?.let { header("x-auth-user-id", it) }
             xRpcMethod?.let { header("X-Rpc-Method", it) }
@@ -151,7 +159,7 @@ internal class PhantomClient(
 
         val response = httpClient.post(walletsUrl) {
             contentType(ContentType.Application.Json)
-            header("x-app-id", config.appId)
+            applyCommonHeaders()
             setBody(bodyString)
         }
 
@@ -170,13 +178,16 @@ internal class PhantomClient(
         organizationName: String,
         username: String,
         publicKeyBytes: ByteArray,
-        expiresInMs: Long = 604800000,
+        expiresInMs: Long = 2678400000, // 31 days
+        authenticatorAlgorithm: String = "Ed25519",
     ): JsonElement {
+        require(organizationName.length <= 64) { "Organization name must be 64 characters or fewer" }
+        require(username.length <= 64) { "Username must be 64 characters or fewer" }
         val authenticator = buildJsonObject {
             putJsonArray("publicKey") {
                 publicKeyBytes.forEach { add(it.toInt() and 0xFF) }
             }
-            put("algorithm", "Ed25519")
+            put("algorithm", authenticatorAlgorithm)
             put("expiresInMs", expiresInMs.toString())
         }
         val user = buildJsonObject {
@@ -440,6 +451,106 @@ internal class PhantomClient(
         return call("completeWalletTransfer", params)
     }
 
+    suspend fun getOrganization(
+        organizationId: String,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+        }
+        return call("getOrganization", params)
+    }
+
+    suspend fun getWallets(
+        organizationId: String,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            put("limit", limit)
+            put("offset", offset)
+        }
+        return call("getOrganizationWallets", params)
+    }
+
+    suspend fun getWalletAddresses(
+        organizationId: String,
+        walletId: String,
+        derivationPaths: List<String>? = null,
+        derivationIndex: Int? = null,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            put("walletId", walletId)
+            derivationPaths?.let { paths ->
+                putJsonArray("derivationPaths") { paths.forEach { add(it) } }
+            }
+            derivationIndex?.let { put("derivationIndex", it) }
+        }
+        return call("getWalletAddresses", params)
+    }
+
+    suspend fun getWalletWithTag(
+        organizationId: String,
+        tag: String,
+        derivationPaths: List<String> = emptyList(),
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            put("tag", tag)
+            putJsonArray("derivationPaths") { derivationPaths.forEach { add(it) } }
+        }
+        return call("getWalletWithTag", params)
+    }
+
+    suspend fun addUserToOrganization(
+        organizationId: String,
+        username: String,
+        authenticatorPublicKey: ByteArray,
+        authenticatorAlgorithm: String = "Ed25519",
+    ): JsonElement {
+        require(username.length <= 64) { "Username must be 64 characters or fewer" }
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            putJsonObject("user") {
+                put("username", username)
+                putJsonObject("policy") { put("type", "root") }
+                putJsonArray("authenticators") {
+                    add(buildJsonObject {
+                        putJsonArray("publicKey") {
+                            authenticatorPublicKey.forEach { add(it.toInt() and 0xFF) }
+                        }
+                        put("algorithm", authenticatorAlgorithm)
+                    })
+                }
+            }
+        }
+        return call("addUserToOrganization", params)
+    }
+
+    suspend fun grantOrganizationAccess(
+        organizationId: String,
+        targetOrganizationId: String,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            put("targetOrganizationId", targetOrganizationId)
+        }
+        return call("grantOrganizationAccess", params)
+    }
+
+    suspend fun deleteAuthenticator(
+        organizationId: String,
+        authenticatorId: String,
+        authUserId: String? = null,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            put("authenticatorId", authenticatorId)
+        }
+        return call("deleteAuthenticator", params, authUserId)
+    }
+
     /**
      * Prepare a transaction for signing (spending-limits flow for user wallets).
      * Returns the (possibly augmented) transaction to send to KMS.
@@ -473,7 +584,7 @@ internal class PhantomClient(
         val response = httpClient.post(prepareUrl) {
             contentType(ContentType.Application.Json)
             header("X-Rpc-Method", xRpcMethod)
-            header("x-app-id", config.appId)
+            applyCommonHeaders()
             setBody(bodyString)
         }
 

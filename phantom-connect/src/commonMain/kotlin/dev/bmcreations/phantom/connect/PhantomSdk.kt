@@ -185,6 +185,21 @@ class PhantomSdk private constructor(
         }
     }
 
+    // ── Auto Connect ──
+
+    /**
+     * Silently attempt to restore an existing session without launching OAuth.
+     * Call on app launch to restore a previously saved session.
+     *
+     * On success, emits [PhantomEvent.Connected] with source `"auto-connect"`.
+     * On failure, sets the clear-previous-session flag and emits [PhantomEvent.ConnectError].
+     *
+     * @return The restored session, or null if no valid session exists.
+     */
+    @Throws(Exception::class)
+    suspend fun autoConnect(): PhantomSession? =
+        orchestrator.autoConnect()
+
     // ── Connect ──
 
     /**
@@ -267,8 +282,8 @@ class PhantomSdk private constructor(
      * [React Native SDK](https://docs.phantom.com/sdks/react-native-sdk/index).
      */
     @Throws(Exception::class)
-    suspend fun logout() =
-        orchestrator.logout()
+    suspend fun logout(shouldClearPreviousSession: Boolean = true) =
+        orchestrator.logout(shouldClearPreviousSession)
 
     // ── Addresses ──
 

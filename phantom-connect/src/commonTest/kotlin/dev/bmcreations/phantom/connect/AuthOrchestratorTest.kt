@@ -270,7 +270,7 @@ class AuthOrchestratorTest {
 
     @Test
     fun getSessionDoesNotRenewBeforeWindow() = runTest {
-        oauthLauncher.succeedWith(expiresInMs = 7.days.inWholeMilliseconds)
+        oauthLauncher.succeedWith(expiresInMs = 31.days.inWholeMilliseconds)
         val orchestrator = createOrchestrator(mockEngineForUserWallet())
         orchestrator.connectWithSocial(AuthProvider.Google)
 
@@ -284,19 +284,15 @@ class AuthOrchestratorTest {
     }
 
     @Test
-    fun getSessionRenewsWithinWindow() = runTest {
-        oauthLauncher.succeedWith(expiresInMs = 7.days.inWholeMilliseconds)
+    fun getSessionDoesNotRenewAuthenticator() = runTest {
+        // Renewal is disabled per upstream PR #283
+        oauthLauncher.succeedWith(expiresInMs = 31.days.inWholeMilliseconds)
 
-        // Mock engine that handles both getAccounts and createAuthenticator
         val mockEngine = MockEngine { request ->
             val body = request.body.toByteArray().decodeToString()
             when {
                 body.contains("getAccounts") -> respond(
                     content = """{"result": {"accounts": [{"address": "addr"}]}}""",
-                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
-                )
-                body.contains("createAuthenticator") -> respond(
-                    content = """{"result": {"authenticatorId": "new-auth"}}""",
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
                 )
                 else -> respond(
@@ -311,13 +307,13 @@ class AuthOrchestratorTest {
 
         val originalAuthExpiresAt = sessionStore.stored?.authenticatorExpiresAt
 
-        // Advance 5.5 days — inside the 2-day renewal window (7 - 5.5 = 1.5 days left)
-        timeProvider.advanceBy(5.days + 12.hours)
+        // Advance 29 days — inside the old renewal window but renewal is disabled
+        timeProvider.advanceBy(29.days)
 
         val session = orchestrator.getSession()
         assertNotNull(session)
-        // authenticatorExpiresAt should be updated
-        assertTrue(session.authenticatorExpiresAt > originalAuthExpiresAt!!)
+        // authenticatorExpiresAt should be UNCHANGED (no renewal)
+        assertEquals(originalAuthExpiresAt, session.authenticatorExpiresAt)
     }
 
     // ── Signing Tests ──
@@ -661,7 +657,7 @@ class AuthOrchestratorTest {
 
     @Test
     fun renewalRollsBackOnFailure() = runTest {
-        oauthLauncher.succeedWith(expiresInMs = 7.days.inWholeMilliseconds)
+        oauthLauncher.succeedWith(expiresInMs = 31.days.inWholeMilliseconds)
 
         var callCount = 0
         val mockEngine = MockEngine { request ->

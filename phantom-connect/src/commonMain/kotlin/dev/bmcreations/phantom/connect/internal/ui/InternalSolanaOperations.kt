@@ -22,4 +22,7 @@ internal class InternalSolanaOperations(
 
     override suspend fun signAllTransactions(transactionsBase64: List<String>): List<String> =
         orchestrator.signAllTransactions(transactionsBase64, Chain.Solana)
+
+    override suspend fun signAndSendAllTransactions(transactionsBase64: List<String>): List<String> =
+        orchestrator.signAndSendAllTransactions(transactionsBase64, Chain.Solana)
 }

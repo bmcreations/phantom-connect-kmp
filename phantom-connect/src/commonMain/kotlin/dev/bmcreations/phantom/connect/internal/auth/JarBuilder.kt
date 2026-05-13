@@ -27,7 +27,7 @@ internal class JarBuilder(
      * @param redirectUri OAuth callback URI
      * @param nonce OIDC nonce derived from P-256 public key + salt
      * @param codeChallenge PKCE code challenge (S256)
-     * @param loginHint Provider hint (e.g. "google:auth2")
+     * @param loginHint Provider hint (e.g. "google:auth2"). Null to omit (for phantom/device providers).
      * @param state Session ID for CSRF protection
      * @param shouldMigrate Whether to migrate from legacy flow
      * @return Signed JWT string: {header}.{payload}.{signature}
@@ -39,7 +39,7 @@ internal class JarBuilder(
         redirectUri: String,
         nonce: String,
         codeChallenge: String,
-        loginHint: String,
+        loginHint: String? = null,
         state: String,
         shouldMigrate: Boolean = true,
     ): String {
@@ -72,7 +72,9 @@ internal class JarBuilder(
             put("nonce", nonce)
             put("code_challenge", codeChallenge)
             put("code_challenge_method", "S256")
-            put("login_hint", loginHint)
+            if (loginHint != null) {
+                put("login_hint", loginHint)
+            }
             put("state", state)
             put("should_migrate", shouldMigrate)
         }

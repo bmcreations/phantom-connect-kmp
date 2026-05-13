@@ -15,6 +15,7 @@ internal class AndroidSessionStore private constructor(
     companion object {
         private const val PREFS_FILE = "phantom_connect_session"
         private const val KEY_SESSION = "session"
+        private const val KEY_SHOULD_CLEAR = "should_clear_previous_session"
 
         fun create(context: Context): AndroidSessionStore {
             val masterKey = MasterKey.Builder(context)
@@ -50,5 +51,13 @@ internal class AndroidSessionStore private constructor(
 
     override suspend fun clear() {
         prefs.edit().remove(KEY_SESSION).apply()
+    }
+
+    override suspend fun saveShouldClearPreviousSession(shouldClear: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOULD_CLEAR, shouldClear).apply()
+    }
+
+    override suspend fun loadShouldClearPreviousSession(): Boolean {
+        return prefs.getBoolean(KEY_SHOULD_CLEAR, false)
     }
 }

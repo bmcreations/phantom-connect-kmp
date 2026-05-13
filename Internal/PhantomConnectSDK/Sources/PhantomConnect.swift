@@ -69,7 +69,7 @@ public class PhantomClient {
             network: network.kmp,
             persistSession: persistSession,
             logger: kmpLogger,
-            sdkVersion: "0.1.0"
+            sdkVersion: "2.0.2"
         )
         let launcher = oauthLauncher ?? IosOAuthLauncher()
         sdk = PhantomSdk.companion.create(config: config, oauthLauncher: launcher, connectors: connectors)
@@ -106,6 +106,19 @@ public class PhantomClient {
         }
     }
 
+    // MARK: - Auto Connect
+
+    /// Silently attempt to restore an existing session without launching OAuth.
+    /// Returns the session on success, or nil if no valid session exists.
+    public func autoConnect() async -> PhantomWalletSession? {
+        do {
+            guard let session = try await sdk.autoConnect() else { return nil }
+            return PhantomWalletSession(from: session)
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Connect
 
     /// Show the connect modal and let the user choose a sign-in method.
@@ -125,6 +138,8 @@ public class PhantomClient {
             let kmpProvider: any AuthProvider = switch provider {
             case .google: AuthProviderGoogle.shared
             case .apple: AuthProviderApple.shared
+            case .phantom: AuthProviderPhantom.shared
+            case .device: AuthProviderDevice.shared
             }
             let result = try await sdk.connect(provider: kmpProvider)
             return mapConnectResult(result)
@@ -190,9 +205,9 @@ public class PhantomClient {
     // MARK: - Logout
 
     /// Clear the session and keys.
-    public func logout() async {
+    public func logout(shouldClearPreviousSession: Bool = true) async {
         do {
-            try await sdk.logout()
+            try await sdk.logout(shouldClearPreviousSession: shouldClearPreviousSession)
         } catch {
             // Silently ignore logout errors
         }
@@ -270,6 +285,8 @@ public enum PhantomWalletType {
 public enum PhantomAuthProvider {
     case google
     case apple
+    case phantom
+    case device
 }
 
 public enum PhantomConnectTheme {
@@ -359,6 +376,12 @@ public struct SolanaChain {
     /// Sign multiple transactions in a single KMS call.
     public func signAllTransactions(base64Transactions: [String]) async throws -> [String] {
         let result = try await sdk.solana.signAllTransactions(transactionsBase64: base64Transactions)
+        return result.compactMap { $0 as? String }
+    }
+
+    /// Sign and submit multiple transactions to the network.
+    public func signAndSendAllTransactions(base64Transactions: [String]) async throws -> [String] {
+        let result = try await sdk.solana.signAndSendAllTransactions(transactionsBase64: base64Transactions)
         return result.compactMap { $0 as? String }
     }
 }

@@ -93,7 +93,9 @@ internal class TokenExchange(
                 append("grant_type", "refresh_token")
                 append("client_id", clientId)
                 append("refresh_token", refreshToken)
-                append("redirect_uri", redirectUri)
+                if (redirectUri.trim().isNotEmpty()) {
+                    append("redirect_uri", redirectUri)
+                }
             },
         )
 
@@ -104,6 +106,10 @@ internal class TokenExchange(
             throw IllegalStateException("Token refresh failed (${response.status.value}): $responseBody")
         }
 
-        return json.decodeFromString(TokenResponse.serializer(), responseBody)
+        val tokenResponse = json.decodeFromString(TokenResponse.serializer(), responseBody)
+        requireNotNull(tokenResponse.refresh_token) {
+            "Token refresh response missing refresh_token"
+        }
+        return tokenResponse
     }
 }

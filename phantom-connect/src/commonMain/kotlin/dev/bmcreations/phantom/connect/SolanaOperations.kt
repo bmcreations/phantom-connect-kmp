@@ -36,4 +36,12 @@ interface SolanaOperations {
      */
     @Throws(Exception::class)
     suspend fun signAllTransactions(transactionsBase64: List<String>): List<String>
+
+    /**
+     * Sign and submit multiple transactions to the network.
+     * Each transaction is signed and broadcast individually.
+     * Returns a list of transaction hashes/signatures in the same order as the input.
+     */
+    @Throws(Exception::class)
+    suspend fun signAndSendAllTransactions(transactionsBase64: List<String>): List<String>
 }

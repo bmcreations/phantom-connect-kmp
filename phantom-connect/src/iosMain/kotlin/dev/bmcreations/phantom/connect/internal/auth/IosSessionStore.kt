@@ -29,9 +29,11 @@ import platform.Security.kSecMatchLimit
 import platform.Security.kSecMatchLimitOne
 import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
+import platform.Foundation.NSUserDefaults
 
 private const val KEYCHAIN_SERVICE = "dev.bmcreations.phantom.connect.session"
 private const val KEYCHAIN_ACCOUNT = "phantom_session"
+private const val DEFAULTS_KEY_SHOULD_CLEAR = "phantom_connect_should_clear_previous_session"
 
 @OptIn(ExperimentalForeignApi::class)
 internal class IosSessionStore : SessionStoreProvider {
@@ -101,6 +103,14 @@ internal class IosSessionStore : SessionStoreProvider {
 
         val cfData = result.value ?: return null
         return CFBridgingRelease(cfData) as? NSData
+    }
+
+    override suspend fun saveShouldClearPreviousSession(shouldClear: Boolean) {
+        NSUserDefaults.standardUserDefaults.setBool(shouldClear, DEFAULTS_KEY_SHOULD_CLEAR)
+    }
+
+    override suspend fun loadShouldClearPreviousSession(): Boolean {
+        return NSUserDefaults.standardUserDefaults.boolForKey(DEFAULTS_KEY_SHOULD_CLEAR)
     }
 
     private fun keychainDelete() {

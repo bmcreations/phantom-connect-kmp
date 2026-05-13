@@ -33,7 +33,7 @@ android {
             dimension = "server"
             buildConfigField("String", "PHANTOM_BASE_URL", "\"https://api.phantom.app\"")
             buildConfigField("String", "PHANTOM_LOGIN_BASE_URL", "\"https://connect.phantom.app\"")
-            buildConfigField("String", "PHANTOM_APP_ID", "\"f2f3406a-0ecf-4a20-96e4-18293772da65\"")
+            buildConfigField("String", "PHANTOM_APP_ID", "\"665db822-006f-4728-95cb-98ab081e773d\"")
         }
     }
 

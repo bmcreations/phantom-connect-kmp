@@ -106,7 +106,7 @@ class TokenExchangeTest {
         val engine = MockEngine { request ->
             capturedBody = request.body.toByteArray().decodeToString()
             respond(
-                content = """{"access_token":"new-at","token_type":"Bearer","expires_in":3600}""",
+                content = """{"access_token":"new-at","refresh_token":"new-rt","token_type":"Bearer","expires_in":3600}""",
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }

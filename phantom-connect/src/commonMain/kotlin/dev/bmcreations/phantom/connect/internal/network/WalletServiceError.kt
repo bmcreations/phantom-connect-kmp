@@ -33,6 +33,17 @@ class TransactionBlockedError(
     val scannerResult: JsonElement?,
 ) : WalletServiceError(detail)
 
+/** Check if an HTTP status code is an authentication error (401/403). */
+internal fun isAuthenticationError(statusCode: Int): Boolean =
+    statusCode == 401 || statusCode == 403
+
+/** Extract a human-readable error message from any throwable. */
+internal fun getErrorMessage(error: Throwable): String = when (error) {
+    is WalletServiceError -> error.detail.ifEmpty { error.title }
+    is PhantomApiException -> error.rpcError.message
+    else -> error.message ?: error.toString()
+}
+
 /**
  * Parse an HTTP error response body into a [WalletServiceError] subtype.
  * Returns null if the response doesn't match a known error format.

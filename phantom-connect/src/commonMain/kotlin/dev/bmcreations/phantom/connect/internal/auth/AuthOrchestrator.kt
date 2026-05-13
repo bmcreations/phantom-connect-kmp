@@ -4,9 +4,11 @@ import dev.bmcreations.phantom.connect.*
 import dev.bmcreations.phantom.connect.WalletConnector
 import dev.bmcreations.phantom.connect.WalletConnectorResult
 import dev.bmcreations.phantom.connect.internal.crypto.*
+import dev.bmcreations.phantom.connect.internal.network.PhantomApiException
 import dev.bmcreations.phantom.connect.internal.network.PhantomClient
 import dev.bmcreations.phantom.connect.internal.network.SolanaRpcClient
 import dev.bmcreations.phantom.connect.internal.network.SpendingLimitError
+import dev.bmcreations.phantom.connect.internal.network.isAuthenticationError
 import dev.bmcreations.phantom.connect.internal.platform.SdkLogger
 import dev.bmcreations.phantom.connect.internal.platform.SystemTimeProvider
 import dev.bmcreations.phantom.connect.internal.platform.TimeProvider
@@ -40,7 +42,7 @@ internal class AuthOrchestrator(
     private val httpClient: HttpClient? = null,
 ) {
     companion object {
-        private val AUTHENTICATOR_TTL = 7.days
+        private val AUTHENTICATOR_TTL = 31.days
         private val RENEWAL_WINDOW = 2.days
     }
 
@@ -50,8 +52,9 @@ internal class AuthOrchestrator(
     private val _events = MutableSharedFlow<PhantomEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<PhantomEvent> = _events.asSharedFlow()
 
-    // Track whether we should clear previous session on next connect
+    // Track whether we should clear previous session on next connect (loaded from store)
     private var shouldClearPreviousSession = false
+    private var shouldClearLoaded = false
 
     private fun findConnector(providerId: String): WalletConnector? =
         connectors.firstOrNull { it.id == providerId }
@@ -71,8 +74,41 @@ internal class AuthOrchestrator(
      *
      * Falls back to legacy Ed25519 flow if P-256 key store is not available.
      */
+    private suspend fun ensureShouldClearLoaded() {
+        if (!shouldClearLoaded) {
+            shouldClearPreviousSession = sessionStore.loadShouldClearPreviousSession()
+            shouldClearLoaded = true
+        }
+    }
+
+    private suspend fun persistShouldClear(value: Boolean) {
+        shouldClearPreviousSession = value
+        sessionStore.saveShouldClearPreviousSession(value)
+    }
+
+    /**
+     * Auto-connect: silently try to restore an existing session.
+     * On failure, sets shouldClearPreviousSession and emits ConnectError.
+     * Returns the session on success, null on failure.
+     */
+    suspend fun autoConnect(): PhantomSession? {
+        return try {
+            val session = getSession()
+            if (session != null) {
+                _events.tryEmit(PhantomEvent.Connected(session, "auto-connect"))
+            }
+            session
+        } catch (e: Exception) {
+            SdkLogger.warn(TAG, "Auto-connect failed: ${e.message}")
+            persistShouldClear(true)
+            _events.tryEmit(PhantomEvent.ConnectError(e, "auto-connect"))
+            null
+        }
+    }
+
     @OptIn(ExperimentalUuidApi::class)
     suspend fun connectWithSocial(provider: AuthProvider): ConnectResult {
+        ensureShouldClearLoaded()
         SdkLogger.info(TAG, "Connect started with provider=${provider.id}")
         _events.tryEmit(PhantomEvent.ConnectStart(provider.id, "social"))
 
@@ -231,26 +267,59 @@ internal class AuthOrchestrator(
                         SdkLogger.warn(TAG, "Migration check failed: ${e.message}")
                     }
 
-                    // Phase 10: Create wallet with tag
-                    val derivationPaths = config.chains.map { it.derivationPath(0) }
-                    val walletResult = client.callWithStamper(
-                        method = "getOrCreateWalletWithTag",
-                        params = buildJsonObject {
-                            put("organizationId", organizationId)
-                            put("walletName", "App Wallet")
-                            put("tag", config.appId)
-                            putJsonArray("accounts") { derivationPaths.forEach { add(it) } }
-                            put("mnemonicLength", 24)
-                        },
-                        overrideStamper = oidcStamper,
-                    )
-                    val walletId = walletResult.jsonObject["walletId"]?.jsonPrimitive?.content
-                        ?: throw IllegalStateException("Missing walletId")
+                    // Phase 10: Get or create wallet
+                    val walletId: String
+                    val accountDerivationIndex: Int
+
+                    if (decoded.wallet != null) {
+                        // Server pre-selected a wallet via access token audience
+                        walletId = decoded.wallet.walletId
+                        accountDerivationIndex = decoded.wallet.derivationIndex
+                        SdkLogger.info(TAG, "Using pre-selected wallet: $walletId (index=$accountDerivationIndex)")
+                    } else {
+                        // Create wallet with tag using canonical derivation info
+                        accountDerivationIndex = 0
+                        val walletResult = client.callWithStamper(
+                            method = "getOrCreateWalletWithTag",
+                            params = buildJsonObject {
+                                put("organizationId", organizationId)
+                                put("walletName", "App Wallet")
+                                put("tag", config.appId)
+                                putJsonArray("accounts") {
+                                    // Canonical DAPP_WALLET_DERIVATIONS per upstream
+                                    add(buildJsonObject {
+                                        put("derivationPath", Chain.Solana.derivationPath(0))
+                                        put("curve", Chain.Solana.curve)
+                                        put("addressFormat", Chain.Solana.addressFormat)
+                                    })
+                                    add(buildJsonObject {
+                                        put("derivationPath", Chain.Ethereum.derivationPath(0))
+                                        put("curve", Chain.Ethereum.curve)
+                                        put("addressFormat", Chain.Ethereum.addressFormat)
+                                    })
+                                    add(buildJsonObject {
+                                        put("derivationPath", Chain.Bitcoin.derivationPath(0))
+                                        put("curve", Chain.Bitcoin.curve)
+                                        put("addressFormat", Chain.Bitcoin.addressFormat)
+                                    })
+                                    add(buildJsonObject {
+                                        put("derivationPath", Chain.Sui.derivationPath(0))
+                                        put("curve", Chain.Sui.curve)
+                                        put("addressFormat", Chain.Sui.addressFormat)
+                                    })
+                                }
+                                put("mnemonicLength", 24)
+                            },
+                            overrideStamper = oidcStamper,
+                        )
+                        walletId = walletResult.jsonObject["walletId"]?.jsonPrimitive?.content
+                            ?: throw IllegalStateException("Missing walletId")
+                    }
 
                     // Phase 11: Fetch addresses
                     val addresses = try {
                         val derivPaths = config.chains.map { chain ->
-                            chain to chain.derivationPath(0)
+                            chain to chain.derivationPath(accountDerivationIndex)
                         }
                         val allPaths = derivPaths.map { it.second }
                         val accountsResult = client.callWithStamper(
@@ -274,7 +343,7 @@ internal class AuthOrchestrator(
                         organizationId = organizationId,
                         addresses = addresses,
                         providerId = provider.id,
-                        accountDerivationIndex = 0,
+                        accountDerivationIndex = accountDerivationIndex,
                         authUserId = decoded.userId,
                         sessionId = sessionId,
                         expiresAt = now.toEpochMilliseconds() + AUTHENTICATOR_TTL.inWholeMilliseconds,
@@ -291,7 +360,7 @@ internal class AuthOrchestrator(
                     )
 
                     sessionStore.save(session)
-                    shouldClearPreviousSession = false
+                    persistShouldClear(false)
                     SdkLogger.info(TAG, "Auth2 connect succeeded for provider=${provider.id}")
                     _events.tryEmit(PhantomEvent.Connected(session, "social"))
                     ConnectResult.Success(session)
@@ -578,13 +647,20 @@ internal class AuthOrchestrator(
     }
 
     /** Clear session and keys. Disconnects from wallet app for deeplink sessions. */
-    suspend fun logout() {
+    suspend fun logout(shouldClear: Boolean = true) {
+        disconnect(shouldClear, "logout")
+    }
+
+    /**
+     * Internal disconnect — clears session and optionally sets the clear-previous-session flag.
+     * Used by logout (shouldClear=true) and auto-disconnect on auth errors (shouldClear=false).
+     */
+    private suspend fun disconnect(shouldClear: Boolean, source: String) {
         val session = sessionStore.load()
         if (session?.walletType == WalletType.DeeplinkWallet) {
             val connector = findConnector(session.providerId)
             if (connector != null) {
                 try {
-                    // Restore crypto state so disconnect can build the encrypted URL
                     session.connectorState?.let { connector.restoreState(it) }
                     connector.disconnect()
                 } catch (e: Exception) {
@@ -598,8 +674,26 @@ internal class AuthOrchestrator(
         p256KeyStore?.delete(P256KeyStoreTags.PENDING)
         client.setAuthorizationHeader(null)
         sessionStore.clear()
-        shouldClearPreviousSession = true
-        _events.tryEmit(PhantomEvent.Disconnected("logout"))
+        persistShouldClear(shouldClear)
+        _events.tryEmit(PhantomEvent.Disconnected(source))
+    }
+
+    /**
+     * Check if an exception is an auth error (401/403) and auto-disconnect if so.
+     * Re-throws the original exception after disconnecting.
+     */
+    private suspend fun handleSigningError(e: Exception) {
+        val isAuthError = when (e) {
+            is Auth2TokenExpiredError -> true
+            is io.ktor.client.plugins.ClientRequestException -> {
+                isAuthenticationError(e.response.status.value)
+            }
+            else -> false
+        }
+        if (isAuthError) {
+            SdkLogger.warn(TAG, "Auth error detected, auto-disconnecting: ${e.message}")
+            disconnect(shouldClear = false, source = "auth-error")
+        }
     }
 
     /** Sign a UTF-8 message using the current session. */
@@ -615,16 +709,21 @@ internal class AuthOrchestrator(
             }
         }
         val derivationPath = resolveDerivationPath(session, chain)
-        val result = client.signUtf8Message(
-            organizationId = session.organizationId,
-            walletId = session.walletId,
-            message = message,
-            chain = chain,
-            derivationPath = derivationPath,
-            authUserId = session.authUserId,
-        )
-        return result.jsonObject["signature"]?.jsonPrimitive?.content
-            ?: throw IllegalStateException("Missing signature in response")
+        try {
+            val result = client.signUtf8Message(
+                organizationId = session.organizationId,
+                walletId = session.walletId,
+                message = message,
+                chain = chain,
+                derivationPath = derivationPath,
+                authUserId = session.authUserId,
+            )
+            return result.jsonObject["signature"]?.jsonPrimitive?.content
+                ?: throw IllegalStateException("Missing signature in response")
+        } catch (e: Exception) {
+            handleSigningError(e)
+            throw e
+        }
     }
 
     /** Sign a transaction without broadcasting. */
@@ -642,17 +741,22 @@ internal class AuthOrchestrator(
             }
         }
         val derivationPath = resolveDerivationPath(session, chain)
-        val result = client.signTransaction(
-            organizationId = session.organizationId,
-            walletId = session.walletId,
-            transactionBase64 = transactionBase64,
-            chain = chain,
-            derivationPath = derivationPath,
-            authUserId = session.authUserId,
-        )
-        return result.jsonObject["signedTransaction"]?.jsonPrimitive?.content
-            ?: result.jsonObject["signature"]?.jsonPrimitive?.content
-            ?: throw IllegalStateException("Missing signed transaction in response")
+        try {
+            val result = client.signTransaction(
+                organizationId = session.organizationId,
+                walletId = session.walletId,
+                transactionBase64 = transactionBase64,
+                chain = chain,
+                derivationPath = derivationPath,
+                authUserId = session.authUserId,
+            )
+            return result.jsonObject["signedTransaction"]?.jsonPrimitive?.content
+                ?: result.jsonObject["signature"]?.jsonPrimitive?.content
+                ?: throw IllegalStateException("Missing signed transaction in response")
+        } catch (e: Exception) {
+            handleSigningError(e)
+            throw e
+        }
     }
 
     /** Sign and submit a transaction. */
@@ -686,7 +790,13 @@ internal class AuthOrchestrator(
             chain == Chain.Solana &&
             account != null
         ) {
-            val authPubKey = try { stamper.getPublicKeyBase58() } catch (_: Exception) { null }
+            // Only send authenticator public key for legacy (Ed25519) sessions, not OIDC
+            val isAuth2Session = session.bearerToken != null
+            val authPubKey = if (!isAuth2Session) {
+                try { stamper.getPublicKeyBase58() } catch (_: Exception) { null }
+            } else {
+                null
+            }
             try {
                 client.prepare(
                     transactionBase64 = transactionBase64,
@@ -705,6 +815,7 @@ internal class AuthOrchestrator(
             transactionBase64
         }
 
+        try {
         val response = client.signAndSubmitTransaction(
             organizationId = session.organizationId,
             walletId = session.walletId,
@@ -751,9 +862,14 @@ internal class AuthOrchestrator(
         return result?.jsonObject?.get("transactionHash")?.jsonPrimitive?.content
             ?: result?.jsonObject?.get("signature")?.jsonPrimitive?.content
             ?: throw IllegalStateException("Missing transaction hash in response")
+        } catch (e: Exception) {
+            handleSigningError(e)
+            throw e
+        }
     }
 
     /** Ethereum personal_sign (EIP-191). */
+    @OptIn(ExperimentalEncodingApi::class)
     suspend fun signPersonalMessage(message: String): String {
         val session = requireSession()
         if (session.walletType == WalletType.DeeplinkWallet) {
@@ -761,15 +877,34 @@ internal class AuthOrchestrator(
         }
         val derivationPath = resolveDerivationPath(session, Chain.Ethereum)
         SdkLogger.debug(TAG, "signPersonalMessage on Ethereum")
-        val result = client.signPersonalMessage(
-            organizationId = session.organizationId,
-            walletId = session.walletId,
-            message = message,
-            derivationPath = derivationPath,
-            authUserId = session.authUserId,
-        )
-        return result.jsonObject["signature"]?.jsonPrimitive?.content
-            ?: throw IllegalStateException("Missing signature in response")
+
+        // Normalize hex-encoded messages (common in personal_sign flows)
+        val normalizedMessage = if (message.startsWith("0x") || message.startsWith("0X")) {
+            try {
+                val hex = message.removePrefix("0x").removePrefix("0X")
+                val bytes = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                bytes.decodeToString()
+            } catch (_: Exception) {
+                message // If hex decode fails, use original
+            }
+        } else {
+            message
+        }
+
+        try {
+            val result = client.signPersonalMessage(
+                organizationId = session.organizationId,
+                walletId = session.walletId,
+                message = normalizedMessage,
+                derivationPath = derivationPath,
+                authUserId = session.authUserId,
+            )
+            return result.jsonObject["signature"]?.jsonPrimitive?.content
+                ?: throw IllegalStateException("Missing signature in response")
+        } catch (e: Exception) {
+            handleSigningError(e)
+            throw e
+        }
     }
 
     /** Ethereum signTypedData_v4 (EIP-712). */
@@ -780,15 +915,20 @@ internal class AuthOrchestrator(
         }
         val derivationPath = resolveDerivationPath(session, Chain.Ethereum)
         SdkLogger.debug(TAG, "signTypedData on Ethereum")
-        val result = client.signTypedData(
-            organizationId = session.organizationId,
-            walletId = session.walletId,
-            typedDataJson = typedDataJson,
-            derivationPath = derivationPath,
-            authUserId = session.authUserId,
-        )
-        return result.jsonObject["signature"]?.jsonPrimitive?.content
-            ?: throw IllegalStateException("Missing signature in response")
+        try {
+            val result = client.signTypedData(
+                organizationId = session.organizationId,
+                walletId = session.walletId,
+                typedDataJson = typedDataJson,
+                derivationPath = derivationPath,
+                authUserId = session.authUserId,
+            )
+            return result.jsonObject["signature"]?.jsonPrimitive?.content
+                ?: throw IllegalStateException("Missing signature in response")
+        } catch (e: Exception) {
+            handleSigningError(e)
+            throw e
+        }
     }
 
     /** Batch sign multiple transactions in a single call. */
@@ -807,17 +947,30 @@ internal class AuthOrchestrator(
         }
         val derivationPath = resolveDerivationPath(session, chain)
         SdkLogger.debug(TAG, "signAllTransactions count=${transactionsBase64.size} chain=${chain.id}")
-        val result = client.signAllTransactions(
-            organizationId = session.organizationId,
-            walletId = session.walletId,
-            transactionsBase64 = transactionsBase64,
-            chain = chain,
-            derivationPath = derivationPath,
-            authUserId = session.authUserId,
-        )
-        val signedArray = result.jsonObject["signedTransactions"]?.jsonArray
-            ?: throw IllegalStateException("Missing signedTransactions in response")
-        return signedArray.map { it.jsonPrimitive.content }
+        try {
+            val result = client.signAllTransactions(
+                organizationId = session.organizationId,
+                walletId = session.walletId,
+                transactionsBase64 = transactionsBase64,
+                chain = chain,
+                derivationPath = derivationPath,
+                authUserId = session.authUserId,
+            )
+            val signedArray = result.jsonObject["signedTransactions"]?.jsonArray
+                ?: throw IllegalStateException("Missing signedTransactions in response")
+            return signedArray.map { it.jsonPrimitive.content }
+        } catch (e: Exception) {
+            handleSigningError(e)
+            throw e
+        }
+    }
+
+    /** Batch sign and submit multiple transactions. */
+    @OptIn(ExperimentalEncodingApi::class)
+    suspend fun signAndSendAllTransactions(transactionsBase64: List<String>, chain: Chain = Chain.Solana): List<String> {
+        return transactionsBase64.map { tx ->
+            signAndSendTransaction(tx, chain)
+        }
     }
 
     // ── Private Helpers ──
@@ -882,23 +1035,12 @@ internal class AuthOrchestrator(
     }
 
     // ── Authenticator Renewal (Three-Phase Commit) ──
+    // NOTE: Renewal is disabled per upstream PR #283. The server no longer supports
+    // authenticator rotation. Kept for potential future re-enablement.
 
     private suspend fun renewAuthenticatorIfNeeded(session: PhantomSession): PhantomSession {
-        val now = timeProvider.now()
-        val expiresAt = Instant.fromEpochMilliseconds(session.authenticatorExpiresAt)
-        val renewalThreshold = expiresAt - RENEWAL_WINDOW
-
-        if (now < renewalThreshold) {
-            return session
-        }
-
-        SdkLogger.info(TAG, "Authenticator renewal triggered")
-        return try {
-            rotateAuthenticator(session)
-        } catch (e: Exception) {
-            SdkLogger.warn(TAG, "Authenticator renewal failed: ${e.message}")
-            session
-        }
+        // Renewal disabled — see upstream PR #283
+        return session
     }
 
     private suspend fun rotateAuthenticator(session: PhantomSession): PhantomSession {

@@ -43,6 +43,7 @@ internal class OidcStamper(
     initialAccessToken: String,
     initialRefreshToken: String? = null,
     initialTokenExpiresAt: Long = 0,
+    initialIdType: String = "Bearer",
 ) : Stamper {
     private val stampJson = Json { encodeDefaults = true }
 
@@ -50,15 +51,19 @@ internal class OidcStamper(
     private var accessToken: String = initialAccessToken
     private var refreshToken: String? = initialRefreshToken
     private var tokenExpiresAt: Long = initialTokenExpiresAt
+    private var idType: String = initialIdType
 
     /** The current bearer token string (e.g. "Bearer eyJ...") for the Authorization header. */
-    val bearerToken: String get() = "Bearer $accessToken"
+    val bearerToken: String get() = "$idType $accessToken"
 
     /** Current refresh token, if available. */
     val currentRefreshToken: String? get() = refreshToken
 
     /** Token expiration timestamp (Unix seconds). */
     val currentTokenExpiresAt: Long get() = tokenExpiresAt
+
+    /** Current token type (e.g. "Bearer"). */
+    val currentIdType: String get() = idType
 
     /**
      * Construct the X-Phantom-Stamp header value for [bodyBytes].
@@ -83,6 +88,27 @@ internal class OidcStamper(
 
         val jsonStr = stampJson.encodeToString(stampPayload)
         return jsonStr.encodeToByteArray().toBase64Url()
+    }
+
+    /**
+     * Reset the P-256 keypair — clears storage and generates a fresh key.
+     */
+    suspend fun resetKeyPair() {
+        p256KeyStore.delete(keyTag)
+        p256KeyStore.generateKeyPair(keyTag)
+        SdkLogger.info(TAG, "P-256 keypair reset for tag: $keyTag")
+    }
+
+    /**
+     * Clear all in-memory token state.
+     */
+    fun clear() {
+        auth2Token = ""
+        accessToken = ""
+        refreshToken = null
+        tokenExpiresAt = 0
+        idType = "Bearer"
+        SdkLogger.info(TAG, "Token state cleared")
     }
 
     /**
@@ -113,6 +139,7 @@ internal class OidcStamper(
 
     private fun updateTokens(response: TokenResponse) {
         accessToken = response.access_token
+        idType = response.token_type
         if (response.refresh_token != null) {
             refreshToken = response.refresh_token
         }

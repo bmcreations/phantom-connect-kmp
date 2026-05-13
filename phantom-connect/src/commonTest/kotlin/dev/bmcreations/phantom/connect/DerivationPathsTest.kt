@@ -24,4 +24,14 @@ class DerivationPathsTest {
     fun ethereumCustomIndex() {
         assertEquals("m/44'/60'/0'/0/5", Chain.Ethereum.derivationPath(5))
     }
+
+    @Test
+    fun bitcoinDefaultIndex() {
+        assertEquals("m/84'/0'/0'/0", Chain.Bitcoin.derivationPath(0))
+    }
+
+    @Test
+    fun bitcoinCustomIndex() {
+        assertEquals("m/84'/0'/3'/0", Chain.Bitcoin.derivationPath(3))
+    }
 }

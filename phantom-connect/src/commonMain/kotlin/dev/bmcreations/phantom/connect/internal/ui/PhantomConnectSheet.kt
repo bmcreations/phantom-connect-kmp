@@ -408,6 +408,7 @@ private fun ProviderIcon(
     when (provider) {
         AuthProvider.Google -> GoogleIcon(modifier = modifier, color = color)
         AuthProvider.Apple -> AppleIcon(modifier = modifier, color = color)
+        else -> {} // Phantom/Device providers don't have icons in the connect sheet
     }
 }
 

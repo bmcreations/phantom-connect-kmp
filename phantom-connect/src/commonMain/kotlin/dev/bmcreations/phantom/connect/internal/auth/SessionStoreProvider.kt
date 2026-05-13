@@ -6,4 +6,6 @@ internal interface SessionStoreProvider {
     suspend fun save(session: PhantomSession)
     suspend fun load(): PhantomSession?
     suspend fun clear()
+    suspend fun saveShouldClearPreviousSession(shouldClear: Boolean) {}
+    suspend fun loadShouldClearPreviousSession(): Boolean = false
 }
