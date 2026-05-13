@@ -6,11 +6,16 @@ import dev.bmcreations.phantom.connect.WalletConnectorResult
 import dev.bmcreations.phantom.connect.internal.crypto.*
 import dev.bmcreations.phantom.connect.internal.network.PhantomClient
 import dev.bmcreations.phantom.connect.internal.network.SolanaRpcClient
+import dev.bmcreations.phantom.connect.internal.network.SpendingLimitError
 import dev.bmcreations.phantom.connect.internal.platform.SdkLogger
 import dev.bmcreations.phantom.connect.internal.platform.SystemTimeProvider
 import dev.bmcreations.phantom.connect.internal.platform.TimeProvider
 import dev.bmcreations.phantom.connect.internal.platform.getPlatform
 import dev.bmcreations.phantom.connect.internal.platform.sdkType
+import io.ktor.client.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.json.*
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -31,6 +36,8 @@ internal class AuthOrchestrator(
     private val timeProvider: TimeProvider = SystemTimeProvider(),
     private val connectors: List<WalletConnector> = emptyList(),
     private val solanaRpcClient: SolanaRpcClient? = null,
+    private val p256KeyStore: P256KeyStoreProvider? = null,
+    private val httpClient: HttpClient? = null,
 ) {
     companion object {
         private val AUTHENTICATOR_TTL = 7.days
@@ -39,16 +46,279 @@ internal class AuthOrchestrator(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Event system
+    private val _events = MutableSharedFlow<PhantomEvent>(extraBufferCapacity = 64)
+    val events: SharedFlow<PhantomEvent> = _events.asSharedFlow()
+
+    // Track whether we should clear previous session on next connect
+    private var shouldClearPreviousSession = false
+
     private fun findConnector(providerId: String): WalletConnector? =
         connectors.firstOrNull { it.id == providerId }
 
     /**
      * Connect with a social provider (Google, Apple).
-     * Launches OAuth in a secure browser and waits for the redirect.
+     *
+     * Uses the PKCE/Auth2 flow:
+     * 1. Generate P-256 keypair
+     * 2. Generate PKCE code verifier + challenge
+     * 3. Build JAR (signed JWT) with auth claims
+     * 4. Launch browser → redirect back with authorization code
+     * 5. Exchange auth code for tokens
+     * 6. Get/create organization and wallet via KMS
+     * 7. Handle pending migrations
+     * 8. Fetch addresses and save session
+     *
+     * Falls back to legacy Ed25519 flow if P-256 key store is not available.
      */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun connectWithSocial(provider: AuthProvider): ConnectResult {
         SdkLogger.info(TAG, "Connect started with provider=${provider.id}")
+        _events.tryEmit(PhantomEvent.ConnectStart(provider.id, "social"))
+
+        // If P-256 key store is available, use the new auth2 PKCE flow
+        if (p256KeyStore != null && httpClient != null) {
+            return connectWithAuth2(provider)
+        }
+
+        // Legacy Ed25519 flow (fallback)
+        return connectWithLegacyFlow(provider)
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun connectWithAuth2(provider: AuthProvider): ConnectResult {
+        val p256 = p256KeyStore!!
+        val http = httpClient!!
+
+        try {
+            // Phase 1: Generate P-256 keypair
+            p256.delete(P256KeyStoreTags.ACTIVE)
+            p256.delete(P256KeyStoreTags.PENDING)
+            val publicKey = p256.generateKeyPair(P256KeyStoreTags.PENDING)
+
+            // Phase 2: Generate PKCE verifier + challenge
+            val codeVerifier = PkceFlow.generateCodeVerifier()
+            val codeChallenge = PkceFlow.generateCodeChallenge(codeVerifier)
+
+            // Phase 3: Derive nonce and build JAR
+            val salt = "" // Empty salt per upstream
+            val nonce = PkceFlow.deriveNonce(publicKey, salt)
+            val sessionId = Uuid.random().toString()
+
+            val jarBuilder = JarBuilder(p256, timeProvider)
+            val loginHint = "${provider.id}:auth2"
+
+            val signedJar = jarBuilder.buildJar(
+                keyTag = P256KeyStoreTags.PENDING,
+                aud = config.authApiBaseUrl,
+                clientId = config.appId,
+                redirectUri = config.redirectUri,
+                nonce = nonce,
+                codeChallenge = codeChallenge,
+                loginHint = loginHint,
+                state = sessionId,
+                shouldMigrate = true,
+            )
+
+            // Phase 4: Build login URL and launch browser
+            val loginUrl = "${config.loginBaseUrl}/login#jar=${urlEncode(signedJar)}"
+
+            // Save pending session so we can resume after redirect
+            val pendingSession = PhantomSession(
+                walletId = "",
+                organizationId = "",
+                providerId = provider.id,
+                accountDerivationIndex = 0,
+                sessionId = sessionId,
+                expiresAt = 0,
+                authenticatorCreatedAt = timeProvider.now().toEpochMilliseconds(),
+                authenticatorExpiresAt = 0,
+                walletType = WalletType.UserWallet,
+                username = "",
+                pkceCodeVerifier = codeVerifier,
+                salt = salt,
+                status = SessionStatus.Pending,
+            )
+            sessionStore.save(pendingSession)
+
+            val oauthResult = oauthLauncher.launch(loginUrl, config.redirectScheme)
+
+            return when (oauthResult) {
+                is OAuthResult.Success -> {
+                    val params = oauthResult.params
+                    val code = params["code"]
+                        ?: return ConnectResult.Error(IllegalStateException("Missing 'code' in redirect"))
+                    val state = params["state"]
+                        ?: return ConnectResult.Error(IllegalStateException("Missing 'state' in redirect"))
+
+                    // Validate state matches sessionId
+                    if (state != sessionId) {
+                        return ConnectResult.Error(IllegalStateException("State mismatch: expected=$sessionId, got=$state"))
+                    }
+
+                    // Phase 5: Exchange auth code for tokens
+                    val tokenExchange = TokenExchange(http)
+                    val tokenResponse = tokenExchange.exchangeAuthCode(
+                        authApiBaseUrl = config.authApiBaseUrl,
+                        clientId = config.appId,
+                        redirectUri = config.redirectUri,
+                        code = code,
+                        codeVerifier = codeVerifier,
+                    )
+
+                    val bearerToken = "${tokenResponse.token_type} ${tokenResponse.access_token}"
+
+                    // Phase 6: Decode access token for user ID and OIDC token
+                    val decoded = Auth2Token.decode(tokenResponse.access_token)
+
+                    // Promote pending key to active
+                    p256.delete(P256KeyStoreTags.ACTIVE)
+                    // On iOS/Android the key was stored under PENDING; now "move" it to ACTIVE
+                    // Since P256KeyStoreProvider doesn't have move(), re-generate under ACTIVE
+                    // Actually, just keep using PENDING tag and rename conceptually
+                    // For simplicity, we'll sign with PENDING tag and swap references
+
+                    // Phase 7: Create OIDC stamper and set Authorization header
+                    val oidcStamper = OidcStamper(
+                        p256KeyStore = p256,
+                        keyTag = P256KeyStoreTags.PENDING, // will be active once confirmed
+                        timeProvider = timeProvider,
+                        tokenExchange = tokenExchange,
+                        authApiBaseUrl = config.authApiBaseUrl,
+                        clientId = config.appId,
+                        redirectUri = config.redirectUri,
+                        initialAuth2Token = decoded.auth2Token,
+                        initialAccessToken = tokenResponse.access_token,
+                        initialRefreshToken = tokenResponse.refresh_token,
+                        initialTokenExpiresAt = decoded.expiresAt,
+                    )
+                    client.setAuthorizationHeader(bearerToken)
+
+                    // Phase 8: Get/create organization
+                    val p256PubKeyB64 = publicKey.toBase64Url()
+                    val orgResult = client.callWithStamper(
+                        method = "getOrCreatePhantomOrganization",
+                        params = buildJsonObject { put("publicKey", p256PubKeyB64) },
+                        overrideStamper = oidcStamper,
+                    )
+                    val organizationId = orgResult.jsonObject["organizationId"]?.jsonPrimitive?.content
+                        ?: throw IllegalStateException("Missing organizationId")
+
+                    // Phase 9: Check pending migrations
+                    try {
+                        val migrationsResult = client.callWithStamper(
+                            method = "listPendingMigrations",
+                            params = buildJsonObject { put("organizationId", organizationId) },
+                            overrideStamper = oidcStamper,
+                        )
+                        val migrations = migrationsResult.jsonObject["pendingMigrations"]?.jsonArray
+                        if (migrations != null && migrations.isNotEmpty()) {
+                            for (migration in migrations) {
+                                val migrationId = migration.jsonObject["migrationId"]?.jsonPrimitive?.content
+                                if (migrationId != null) {
+                                    client.callWithStamper(
+                                        method = "completeWalletTransfer",
+                                        params = buildJsonObject {
+                                            put("organizationId", organizationId)
+                                            put("migrationId", migrationId)
+                                        },
+                                        overrideStamper = oidcStamper,
+                                    )
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        SdkLogger.warn(TAG, "Migration check failed: ${e.message}")
+                    }
+
+                    // Phase 10: Create wallet with tag
+                    val derivationPaths = config.chains.map { it.derivationPath(0) }
+                    val walletResult = client.callWithStamper(
+                        method = "getOrCreateWalletWithTag",
+                        params = buildJsonObject {
+                            put("organizationId", organizationId)
+                            put("walletName", "App Wallet")
+                            put("tag", config.appId)
+                            putJsonArray("accounts") { derivationPaths.forEach { add(it) } }
+                            put("mnemonicLength", 24)
+                        },
+                        overrideStamper = oidcStamper,
+                    )
+                    val walletId = walletResult.jsonObject["walletId"]?.jsonPrimitive?.content
+                        ?: throw IllegalStateException("Missing walletId")
+
+                    // Phase 11: Fetch addresses
+                    val addresses = try {
+                        val derivPaths = config.chains.map { chain ->
+                            chain to chain.derivationPath(0)
+                        }
+                        val allPaths = derivPaths.map { it.second }
+                        val accountsResult = client.callWithStamper(
+                            method = "getAccounts",
+                            params = buildJsonObject {
+                                put("organizationId", organizationId)
+                                put("walletId", walletId)
+                                putJsonArray("accounts") { allPaths.forEach { add(it) } }
+                            },
+                            overrideStamper = oidcStamper,
+                        )
+                        parseAddresses(accountsResult, derivPaths)
+                    } catch (e: Exception) {
+                        SdkLogger.warn(TAG, "Failed to fetch addresses: ${e.message}")
+                        emptyList()
+                    }
+
+                    val now = timeProvider.now()
+                    val session = PhantomSession(
+                        walletId = walletId,
+                        organizationId = organizationId,
+                        addresses = addresses,
+                        providerId = provider.id,
+                        accountDerivationIndex = 0,
+                        authUserId = decoded.userId,
+                        sessionId = sessionId,
+                        expiresAt = now.toEpochMilliseconds() + AUTHENTICATOR_TTL.inWholeMilliseconds,
+                        authenticatorCreatedAt = now.toEpochMilliseconds(),
+                        authenticatorExpiresAt = now.toEpochMilliseconds() + AUTHENTICATOR_TTL.inWholeMilliseconds,
+                        walletType = WalletType.UserWallet,
+                        username = "user-${Uuid.random()}",
+                        bearerToken = bearerToken,
+                        refreshToken = tokenResponse.refresh_token,
+                        tokenExpiresAt = decoded.expiresAt,
+                        pkceCodeVerifier = codeVerifier,
+                        salt = salt,
+                        status = SessionStatus.Completed,
+                    )
+
+                    sessionStore.save(session)
+                    shouldClearPreviousSession = false
+                    SdkLogger.info(TAG, "Auth2 connect succeeded for provider=${provider.id}")
+                    _events.tryEmit(PhantomEvent.Connected(session, "social"))
+                    ConnectResult.Success(session)
+                }
+
+                is OAuthResult.Cancelled -> {
+                    SdkLogger.info(TAG, "Connect cancelled: ${oauthResult.reason}")
+                    ConnectResult.Cancelled(oauthResult.reason)
+                }
+                is OAuthResult.Error -> {
+                    SdkLogger.error(TAG, "Connect failed: ${oauthResult.cause.message}")
+                    _events.tryEmit(PhantomEvent.ConnectError(oauthResult.cause, "social"))
+                    ConnectResult.Error(oauthResult.cause)
+                }
+            }
+        } catch (e: Exception) {
+            SdkLogger.error(TAG, "Auth2 connect failed: ${e.message}")
+            _events.tryEmit(PhantomEvent.ConnectError(e, "social"))
+            return ConnectResult.Error(e)
+        }
+    }
+
+    /**
+     * Legacy Ed25519 connect flow (deprecated but kept for backward compatibility).
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun connectWithLegacyFlow(provider: AuthProvider): ConnectResult {
         // Phase 1: Clear old keys and generate a fresh keypair
         keyStore.delete(KeyStoreTags.ACTIVE)
         keyStore.delete(KeyStoreTags.PENDING)
@@ -58,7 +328,7 @@ internal class AuthOrchestrator(
         val sessionId = Uuid.random().toString()
         val platform = getPlatform()
 
-        val loginUrl = buildLoginUrl(
+        val loginUrl = buildLegacyLoginUrl(
             publicKey = publicKeyBase58,
             provider = provider,
             sessionId = sessionId,
@@ -112,6 +382,7 @@ internal class AuthOrchestrator(
 
                 sessionStore.save(sessionWithAddresses)
                 SdkLogger.info(TAG, "Connect succeeded for provider=${provider.id}")
+                _events.tryEmit(PhantomEvent.Connected(sessionWithAddresses, "social"))
                 ConnectResult.Success(sessionWithAddresses)
             }
 
@@ -121,6 +392,7 @@ internal class AuthOrchestrator(
             }
             is OAuthResult.Error -> {
                 SdkLogger.error(TAG, "Connect failed: ${oauthResult.cause.message}")
+                _events.tryEmit(PhantomEvent.ConnectError(oauthResult.cause, "social"))
                 ConnectResult.Error(oauthResult.cause)
             }
         }
@@ -131,15 +403,11 @@ internal class AuthOrchestrator(
      *
      * Pure deeplink connect — no KMS involvement. The wallet app is used for
      * every subsequent signing operation via deeplinks.
-     *
-     * Flow:
-     * 1. Connector deeplinks to wallet app → gets wallet pubkey
-     * 2. Build session with walletType = DeeplinkWallet
-     * 3. Save session. Done.
      */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun connectWithExternalWallet(connector: WalletConnector): ConnectResult {
         SdkLogger.info(TAG, "Connect started with external wallet connector=${connector.id}")
+        _events.tryEmit(PhantomEvent.ConnectStart(connector.id, "wallet"))
 
         val connectResult = connector.connect()
         val walletPublicKeyBase58 = when (connectResult) {
@@ -150,6 +418,7 @@ internal class AuthOrchestrator(
             }
             is WalletConnectorResult.Error -> {
                 SdkLogger.error(TAG, "External wallet connect failed: ${connectResult.cause.message}")
+                _events.tryEmit(PhantomEvent.ConnectError(connectResult.cause, "wallet"))
                 return ConnectResult.Error(connectResult.cause)
             }
         }
@@ -183,6 +452,7 @@ internal class AuthOrchestrator(
 
         sessionStore.save(sessionWithState)
         SdkLogger.info(TAG, "External wallet connect succeeded for connector=${connector.id}")
+        _events.tryEmit(PhantomEvent.Connected(sessionWithState, "wallet"))
         return ConnectResult.Success(sessionWithState)
     }
 
@@ -235,8 +505,10 @@ internal class AuthOrchestrator(
             )
 
             sessionStore.save(session)
+            _events.tryEmit(PhantomEvent.Connected(session, "appWallet"))
             ConnectResult.Success(session)
         } catch (e: Exception) {
+            _events.tryEmit(PhantomEvent.ConnectError(e, "appWallet"))
             ConnectResult.Error(e)
         }
     }
@@ -244,6 +516,25 @@ internal class AuthOrchestrator(
     /** Load the current session, renewing the authenticator if needed. */
     suspend fun getSession(): PhantomSession? {
         val session = sessionStore.load() ?: return null
+
+        // Session validation: clear pending sessions with no active OAuth redirect
+        if (session.status == SessionStatus.Pending) {
+            if (session.walletId.isEmpty() && session.organizationId.isEmpty()) {
+                SdkLogger.info(TAG, "Clearing stale pending session")
+                sessionStore.clear()
+                return null
+            }
+        }
+
+        // Session validation: clear sessions missing required fields
+        if (session.status == SessionStatus.Completed &&
+            session.walletType != WalletType.DeeplinkWallet &&
+            (session.walletId.isEmpty() || session.organizationId.isEmpty())
+        ) {
+            SdkLogger.info(TAG, "Clearing invalid session (missing walletId or organizationId)")
+            sessionStore.clear()
+            return null
+        }
 
         // Deeplink wallet sessions don't use KMS — skip renewal and address backfill.
         // Restore connector crypto state so signing works immediately after restart.
@@ -254,6 +545,11 @@ internal class AuthOrchestrator(
                 connector?.restoreState(state)
             }
             return session
+        }
+
+        // For auth2 sessions with bearer token, restore the Authorization header
+        if (session.bearerToken != null) {
+            client.setAuthorizationHeader(session.bearerToken)
         }
 
         val renewed = renewAuthenticatorIfNeeded(session)
@@ -298,7 +594,12 @@ internal class AuthOrchestrator(
         }
         keyStore.delete(KeyStoreTags.ACTIVE)
         keyStore.delete(KeyStoreTags.PENDING)
+        p256KeyStore?.delete(P256KeyStoreTags.ACTIVE)
+        p256KeyStore?.delete(P256KeyStoreTags.PENDING)
+        client.setAuthorizationHeader(null)
         sessionStore.clear()
+        shouldClearPreviousSession = true
+        _events.tryEmit(PhantomEvent.Disconnected("logout"))
     }
 
     /** Sign a UTF-8 message using the current session. */
@@ -386,15 +687,20 @@ internal class AuthOrchestrator(
             account != null
         ) {
             val authPubKey = try { stamper.getPublicKeyBase58() } catch (_: Exception) { null }
-            client.prepare(
-                transactionBase64 = transactionBase64,
-                organizationId = session.organizationId,
-                chain = chain,
-                network = config.network,
-                account = account,
-                authenticatorPublicKey = authPubKey,
-                xRpcMethod = "signAndSendTransaction",
-            )
+            try {
+                client.prepare(
+                    transactionBase64 = transactionBase64,
+                    organizationId = session.organizationId,
+                    chain = chain,
+                    network = config.network,
+                    account = account,
+                    authenticatorPublicKey = authPubKey,
+                    xRpcMethod = "signAndSendTransaction",
+                )
+            } catch (e: SpendingLimitError) {
+                _events.tryEmit(PhantomEvent.SpendingLimitReached(e))
+                throw e
+            }
         } else {
             transactionBase64
         }
@@ -634,7 +940,7 @@ internal class AuthOrchestrator(
 
     // ── URL Construction ──
 
-    private fun buildLoginUrl(
+    private fun buildLegacyLoginUrl(
         publicKey: String,
         provider: AuthProvider,
         sessionId: String,
@@ -646,8 +952,8 @@ internal class AuthOrchestrator(
             put("redirect_uri", config.redirectUri)
             put("session_id", sessionId)
             put("provider", provider.id)
-            put("clear_previous_session", "false")
-            put("allow_refresh", "true")
+            put("clear_previous_session", if (shouldClearPreviousSession) "true" else "false")
+            put("allow_refresh", if (shouldClearPreviousSession) "false" else "true")
             put("sdk_version", config.sdkVersion)
             put("sdk_type", sdkType)
             put("platform", platform)

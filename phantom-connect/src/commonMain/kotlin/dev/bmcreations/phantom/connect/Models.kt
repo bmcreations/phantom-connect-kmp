@@ -35,19 +35,80 @@ sealed interface Chain {
         override fun derivationPath(accountIndex: Int) = "m/44'/60'/0'/0/$accountIndex"
     }
 
+    data object Polygon : Chain {
+        override val id = "polygon"
+        override val curve = "Secp256k1"
+        override val addressFormat = "Ethereum"
+        override val networkId = "eip155:137"
+        override fun derivationPath(accountIndex: Int) = "m/44'/60'/0'/0/$accountIndex"
+    }
+
+    data object Base : Chain {
+        override val id = "base"
+        override val curve = "Secp256k1"
+        override val addressFormat = "Ethereum"
+        override val networkId = "eip155:8453"
+        override fun derivationPath(accountIndex: Int) = "m/44'/60'/0'/0/$accountIndex"
+    }
+
+    data object Arbitrum : Chain {
+        override val id = "arbitrum"
+        override val curve = "Secp256k1"
+        override val addressFormat = "Ethereum"
+        override val networkId = "eip155:42161"
+        override fun derivationPath(accountIndex: Int) = "m/44'/60'/0'/0/$accountIndex"
+    }
+
+    data object Monad : Chain {
+        override val id = "monad"
+        override val curve = "Secp256k1"
+        override val addressFormat = "Ethereum"
+        override val networkId = "eip155:143"
+        override fun derivationPath(accountIndex: Int) = "m/44'/60'/0'/0/$accountIndex"
+    }
+
+    data object Bitcoin : Chain {
+        override val id = "bitcoin"
+        override val curve = "Secp256k1"
+        override val addressFormat = "Bitcoin"
+        override val networkId = "bip122:000000000019d6689c085ae165831e93"
+        override fun derivationPath(accountIndex: Int) = "m/84'/0'/0'/0"
+    }
+
+    data object Sui : Chain {
+        override val id = "sui"
+        override val curve = "Ed25519"
+        override val addressFormat = "Sui"
+        override val networkId = "sui:mainnet"
+        override fun derivationPath(accountIndex: Int) = "m/44'/784'/0'/0'/0'"
+    }
+
     companion object {
-        val all: List<Chain> = listOf(Solana, Ethereum)
+        val all: List<Chain> = listOf(Solana, Ethereum, Polygon, Base, Arbitrum, Monad, Bitcoin, Sui)
 
         fun fromId(id: String): Chain = when (id) {
             Solana.id -> Solana
             Ethereum.id -> Ethereum
+            Polygon.id -> Polygon
+            Base.id -> Base
+            Arbitrum.id -> Arbitrum
+            Monad.id -> Monad
+            Bitcoin.id -> Bitcoin
+            Sui.id -> Sui
             else -> throw IllegalArgumentException("Unknown chain: $id")
         }
 
         /** Resolve a [Chain] from a CAIP-2 network identifier (e.g. "solana:mainnet", "eip155:1"). */
         fun fromNetworkId(networkId: String): Chain = when {
             networkId.startsWith("solana:") -> Solana
-            networkId.startsWith("eip155:") -> Ethereum
+            networkId == "eip155:1" -> Ethereum
+            networkId == "eip155:137" -> Polygon
+            networkId == "eip155:8453" -> Base
+            networkId == "eip155:42161" -> Arbitrum
+            networkId == "eip155:143" -> Monad
+            networkId.startsWith("eip155:") -> Ethereum // fallback for unknown EVM chains
+            networkId.startsWith("bip122:") -> Bitcoin
+            networkId.startsWith("sui:") -> Sui
             else -> throw IllegalArgumentException("Unknown networkId: $networkId")
         }
     }
@@ -117,6 +178,16 @@ data class WalletAddress(
     val chain: Chain get() = Chain.fromId(chainId)
 }
 
+// ── Session Status ──
+
+@Serializable
+enum class SessionStatus {
+    /** Session is being established (OAuth in progress). */
+    Pending,
+    /** Session is fully established with wallet and organization. */
+    Completed,
+}
+
 // ── Session ──
 
 @Serializable
@@ -134,6 +205,12 @@ data class PhantomSession(
     val walletType: WalletType,
     val username: String,
     val connectorState: String? = null,
+    val bearerToken: String? = null,
+    val refreshToken: String? = null,
+    val tokenExpiresAt: Long = 0,
+    val pkceCodeVerifier: String? = null,
+    val salt: String = "",
+    val status: SessionStatus = SessionStatus.Completed,
 ) {
     /** Convenience to get the typed provider, or null for non-social sessions (e.g. app wallet). */
     val provider: AuthProvider? get() = try { AuthProvider.fromId(providerId) } catch (_: Exception) { null }
@@ -213,6 +290,7 @@ enum class Network { Mainnet, Devnet, Testnet }
  * @property redirectScheme URL scheme for OAuth callbacks (e.g. `"myapp"`). Equivalent to `scheme` in the React Native SDK.
  * @property redirectUri Full redirect URI (e.g. `"myapp://phantom-callback"`). Equivalent to `authOptions.redirectUrl` in the React Native SDK.
  * @property baseUrl KMS API base URL. Override for testing only.
+ * @property authApiBaseUrl OAuth2 token exchange base URL. Override for testing only.
  * @property loginBaseUrl OAuth login base URL. Override for testing only.
  * @property providers Auth providers to offer (default: Google + Apple). Equivalent to `providers` in the React Native SDK.
  * @property chains Chains to fetch addresses for (default: Solana). Equivalent to `addressTypes` in the React Native SDK.
@@ -227,6 +305,7 @@ data class PhantomSdkConfig(
     val redirectScheme: String,
     val redirectUri: String,
     val baseUrl: String = "https://api.phantom.app",
+    val authApiBaseUrl: String = "https://auth.phantom.app",
     val loginBaseUrl: String = "https://connect.phantom.app",
     val providers: List<AuthProvider> = AuthProvider.all,
     val chains: List<Chain> = listOf(Chain.Solana),

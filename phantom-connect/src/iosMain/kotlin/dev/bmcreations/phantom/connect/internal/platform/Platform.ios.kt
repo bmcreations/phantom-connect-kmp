@@ -4,6 +4,8 @@ import dev.bmcreations.phantom.connect.internal.auth.IosSessionStore
 import dev.bmcreations.phantom.connect.internal.auth.SessionStoreProvider
 import dev.bmcreations.phantom.connect.internal.crypto.Ed25519KeyStoreProvider
 import dev.bmcreations.phantom.connect.internal.crypto.IosEd25519KeyStore
+import dev.bmcreations.phantom.connect.internal.crypto.IosP256KeyStore
+import dev.bmcreations.phantom.connect.internal.crypto.P256KeyStoreProvider
 import dev.bmcreations.phantom.connect.internal.ui.ConnectSheetProvider
 import dev.bmcreations.phantom.connect.internal.ui.IosConnectSheetProvider
 import platform.Foundation.NSNumber
@@ -12,6 +14,7 @@ import platform.UIKit.UIDevice
 import platform.UIKit.UIScreen
 
 internal actual fun platformKeyStore(): Ed25519KeyStoreProvider = IosEd25519KeyStore()
+internal actual fun platformP256KeyStore(): P256KeyStoreProvider = IosP256KeyStore()
 internal actual fun platformSessionStore(): SessionStoreProvider = IosSessionStore()
 internal actual fun platformConnectSheetProvider(): ConnectSheetProvider = IosConnectSheetProvider()
 internal actual fun getPlatform(): String = "ios"

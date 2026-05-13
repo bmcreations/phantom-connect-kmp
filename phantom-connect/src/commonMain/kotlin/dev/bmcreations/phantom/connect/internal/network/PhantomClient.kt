@@ -22,6 +22,7 @@ internal class PhantomClient(
     private val stamper: Stamper,
     private val config: PhantomSdkConfig,
     private val timeProvider: TimeProvider = SystemTimeProvider(),
+    private var authorizationHeader: String? = null,
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -30,6 +31,11 @@ internal class PhantomClient(
 
     private val walletsUrl get() = "${config.baseUrl}/v1/wallets"
     private val kmsRpcUrl get() = "${config.baseUrl}/v1/wallets/kms/rpc"
+
+    /** Update the Authorization header (e.g. "Bearer eyJ...") for auth2 flow. */
+    fun setAuthorizationHeader(value: String?) {
+        authorizationHeader = value
+    }
 
     suspend fun call(
         method: String,
@@ -65,6 +71,7 @@ internal class PhantomClient(
             header("X-Phantom-Stamp", stamp)
             header("x-app-id", config.appId)
             header("x-api-version", DEFAULT_KMS_API_VERSION)
+            authorizationHeader?.let { header("Authorization", it) }
             authUserId?.let { header("x-auth-user-id", it) }
             xRpcMethod?.let { header("X-Rpc-Method", it) }
             setBody(bodyString)
@@ -82,6 +89,53 @@ internal class PhantomClient(
         SdkLogger.debug(TAG, "RPC $method succeeded (status=${response.status.value})")
 
         return rpcResponse
+    }
+
+    /**
+     * Make an RPC call with a specific stamper (e.g. OIDC stamper for auth2 flow).
+     * This allows mixing Ed25519 and P-256 stampers on the same client.
+     */
+    suspend fun callWithStamper(
+        method: String,
+        params: JsonObject,
+        overrideStamper: Stamper,
+        authUserId: String? = null,
+        url: String = kmsRpcUrl,
+        xRpcMethod: String? = null,
+    ): JsonElement {
+        val request = JsonRpcRequest(
+            method = method,
+            params = params,
+            timestampMs = timeProvider.now().toEpochMilliseconds(),
+        )
+        val bodyString = json.encodeToString(JsonRpcRequest.serializer(), request)
+        val bodyBytes = bodyString.encodeToByteArray()
+        val stamp = overrideStamper.stamp(bodyBytes)
+
+        SdkLogger.debug(TAG, "RPC $method (override stamper) stamp=${stamp.take(80)}... url=$url")
+
+        val response = httpClient.post(url) {
+            contentType(ContentType.Application.Json)
+            header("X-Phantom-Stamp", stamp)
+            header("x-app-id", config.appId)
+            header("x-api-version", DEFAULT_KMS_API_VERSION)
+            authorizationHeader?.let { header("Authorization", it) }
+            authUserId?.let { header("x-auth-user-id", it) }
+            xRpcMethod?.let { header("X-Rpc-Method", it) }
+            setBody(bodyString)
+        }
+
+        val responseBody = response.bodyAsText()
+        SdkLogger.debug(TAG, "RPC $method response (${response.status.value}): $responseBody")
+        val rpcResponse = json.decodeFromString(JsonRpcResponse.serializer(), responseBody)
+
+        rpcResponse.rpcError()?.let {
+            SdkLogger.error(TAG, "RPC $method failed: ${it.message}")
+            throw PhantomApiException(it)
+        }
+
+        return rpcResponse.result
+            ?: throw IllegalStateException("Phantom API returned neither result nor error")
     }
 
     suspend fun callUnauthenticated(
@@ -338,6 +392,54 @@ internal class PhantomClient(
         return call("createAuthenticator", params, authUserId)
     }
 
+    // ── Auth2 KMS methods ──
+
+    suspend fun getOrCreatePhantomOrganization(
+        publicKey: String,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("publicKey", publicKey)
+        }
+        return call("getOrCreatePhantomOrganization", params)
+    }
+
+    suspend fun getOrCreateWalletWithTag(
+        organizationId: String,
+        walletName: String,
+        tag: String,
+        accounts: List<String>,
+        mnemonicLength: Int = 24,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            put("walletName", walletName)
+            put("tag", tag)
+            putJsonArray("accounts") { accounts.forEach { add(it) } }
+            put("mnemonicLength", mnemonicLength)
+        }
+        return call("getOrCreateWalletWithTag", params)
+    }
+
+    suspend fun listPendingMigrations(
+        organizationId: String,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+        }
+        return call("listPendingMigrations", params)
+    }
+
+    suspend fun completeWalletTransfer(
+        organizationId: String,
+        migrationId: String,
+    ): JsonElement {
+        val params = buildJsonObject {
+            put("organizationId", organizationId)
+            put("migrationId", migrationId)
+        }
+        return call("completeWalletTransfer", params)
+    }
+
     /**
      * Prepare a transaction for signing (spending-limits flow for user wallets).
      * Returns the (possibly augmented) transaction to send to KMS.
@@ -379,6 +481,9 @@ internal class PhantomClient(
         SdkLogger.debug(TAG, "prepare response (status=${response.status.value}): $responseBody")
 
         if (!response.status.isSuccess()) {
+            // Try to parse as structured error (spending limit, transaction blocked)
+            val walletError = parseWalletServiceError(responseBody)
+            if (walletError != null) throw walletError
             throw IllegalStateException("Prepare failed (${response.status.value}): $responseBody")
         }
 

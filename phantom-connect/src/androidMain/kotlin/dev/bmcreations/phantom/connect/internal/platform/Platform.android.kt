@@ -5,7 +5,9 @@ import android.content.Context
 import dev.bmcreations.phantom.connect.internal.auth.AndroidSessionStore
 import dev.bmcreations.phantom.connect.internal.auth.SessionStoreProvider
 import dev.bmcreations.phantom.connect.internal.crypto.AndroidEd25519KeyStore
+import dev.bmcreations.phantom.connect.internal.crypto.AndroidP256KeyStore
 import dev.bmcreations.phantom.connect.internal.crypto.Ed25519KeyStoreProvider
+import dev.bmcreations.phantom.connect.internal.crypto.P256KeyStoreProvider
 import dev.bmcreations.phantom.connect.internal.ui.AndroidConnectSheetProvider
 import dev.bmcreations.phantom.connect.internal.ui.ConnectSheetProvider
 
@@ -30,6 +32,9 @@ internal object PhantomSdkInitializer {
 
 internal actual fun platformKeyStore(): Ed25519KeyStoreProvider =
     AndroidEd25519KeyStore.create(PhantomSdkInitializer.requireContext())
+
+internal actual fun platformP256KeyStore(): P256KeyStoreProvider =
+    AndroidP256KeyStore.create(PhantomSdkInitializer.requireContext())
 
 internal actual fun platformSessionStore(): SessionStoreProvider =
     AndroidSessionStore.create(PhantomSdkInitializer.requireContext())

@@ -5,6 +5,7 @@ import dev.bmcreations.phantom.connect.internal.auth.AuthOrchestrator
 import dev.bmcreations.phantom.connect.internal.auth.InMemorySessionStore
 import dev.bmcreations.phantom.connect.internal.crypto.Ed25519KeyStoreProvider
 import dev.bmcreations.phantom.connect.internal.crypto.Ed25519Stamper
+import dev.bmcreations.phantom.connect.internal.crypto.P256KeyStoreProvider
 import dev.bmcreations.phantom.connect.internal.auth.SessionStoreProvider
 import dev.bmcreations.phantom.connect.internal.network.PhantomClient
 import dev.bmcreations.phantom.connect.internal.network.SolanaRpcClient
@@ -16,6 +17,7 @@ import io.ktor.client.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.json.Json
 
 /**
@@ -37,6 +39,23 @@ class PhantomSdk private constructor(
 ) {
     /** Theme for the connect sheet. Can be changed at runtime. */
     var theme: ConnectSheetTheme = ConnectSheetTheme.Dark
+
+    /**
+     * Event stream for connect, disconnect, and error events.
+     *
+     * Observe to react to SDK lifecycle changes:
+     * ```kotlin
+     * sdk.events.collect { event ->
+     *     when (event) {
+     *         is PhantomEvent.Connected -> { /* session available */ }
+     *         is PhantomEvent.Disconnected -> { /* session cleared */ }
+     *         is PhantomEvent.SpendingLimitReached -> { /* show limit UI */ }
+     *         // ...
+     *     }
+     * }
+     * ```
+     */
+    val events: SharedFlow<PhantomEvent> get() = orchestrator.events
 
     /**
      * Chain-scoped Solana signing operations.
@@ -83,6 +102,7 @@ class PhantomSdk private constructor(
             SdkLogger.logger = config.logger
 
             val keyStore = platformKeyStore()
+            val p256KeyStore = platformP256KeyStore()
             val sessionStore = if (config.persistSession) platformSessionStore() else InMemorySessionStore()
             val connectSheet = platformConnectSheetProvider()
             val timeProvider = SystemTimeProvider()
@@ -120,6 +140,8 @@ class PhantomSdk private constructor(
                 timeProvider = timeProvider,
                 connectors = connectors,
                 solanaRpcClient = solanaRpcClient,
+                p256KeyStore = p256KeyStore,
+                httpClient = httpClient,
             )
 
             return PhantomSdk(orchestrator, connectSheet, config, connectors)
@@ -134,6 +156,7 @@ class PhantomSdk private constructor(
             timeProvider: TimeProvider = SystemTimeProvider(),
             connectSheetProvider: ConnectSheetProvider = NoopConnectSheetProvider(),
             connectors: List<WalletConnector> = emptyList(),
+            p256KeyStore: P256KeyStoreProvider? = null,
         ): PhantomSdk {
             SdkLogger.logger = config.logger
 
@@ -155,6 +178,8 @@ class PhantomSdk private constructor(
                 timeProvider = timeProvider,
                 connectors = connectors,
                 solanaRpcClient = solanaRpcClient,
+                p256KeyStore = p256KeyStore,
+                httpClient = if (p256KeyStore != null) httpClient else null,
             )
             return PhantomSdk(orchestrator, connectSheetProvider, config, connectors)
         }
