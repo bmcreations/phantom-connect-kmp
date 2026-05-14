@@ -9,3 +9,8 @@ internal interface SessionStoreProvider {
     suspend fun saveShouldClearPreviousSession(shouldClear: Boolean) {}
     suspend fun loadShouldClearPreviousSession(): Boolean = false
 }
+
+internal interface SessionShouldClearDelegate {
+    suspend fun save(shouldClear: Boolean)
+    suspend fun load(): Boolean
+}
