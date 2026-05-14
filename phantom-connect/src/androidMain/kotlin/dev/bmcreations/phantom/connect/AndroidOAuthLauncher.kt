@@ -14,7 +14,7 @@ import kotlinx.coroutines.CompletableDeferred
  *
  * The flow:
  * 1. Opens the OAuth URL in a Chrome Custom Tab.
- * 2. Phantom redirects back to `callbackScheme://phantom-callback?...`
+ * 2. Phantom redirects back to `callbackScheme://phantom-auth-callback?...`
  * 3. [PhantomCallbackActivity] catches the redirect and completes the deferred.
  * 4. If the user dismisses Custom Tabs without completing, activity resume
  *    detection completes with [OAuthResult.Cancelled].

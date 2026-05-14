@@ -20,7 +20,7 @@ import kotlinx.coroutines.CompletableDeferred
  *         <action android:name="android.intent.action.VIEW" />
  *         <category android:name="android.intent.category.DEFAULT" />
  *         <category android:name="android.intent.category.BROWSABLE" />
- *         <data android:scheme="yourapp" android:host="phantom-callback" />
+ *         <data android:scheme="yourapp" android:host="phantom-auth-callback" />
  *     </intent-filter>
  * </activity>
  * ```

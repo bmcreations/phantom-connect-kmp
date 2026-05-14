@@ -44,7 +44,7 @@ wiremock/
 ### OAuth Flow
 1. SDK opens `http://10.0.2.2:8080/login?redirect_uri=...&provider=google&...`
 2. WireMock serves `login.html` which reads the `redirect_uri` from query params
-3. After 500ms, JavaScript redirects to `phantomsample://phantom-callback?wallet_id=mock-wallet-123&...`
+3. After 500ms, JavaScript redirects to `phantomsample://phantom-auth-callback?wallet_id=mock-wallet-123&...`
 4. Android intercepts the custom scheme via `PhantomCallbackActivity`
 5. SDK parses the redirect params and calls `getAccounts` to populate the wallet address
 

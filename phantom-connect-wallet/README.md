@@ -45,7 +45,7 @@ val sdk = PhantomSdk.create(
     config = PhantomSdkConfig(
         appId = "your-app-id",
         redirectScheme = "myapp",
-        redirectUri = "myapp://phantom-callback",
+        redirectUri = "myapp://phantom-auth-callback",
     ),
     oauthLauncher = createOAuthLauncher(this),
     connectors = listOf(walletConnector),
@@ -68,7 +68,7 @@ let connector = PhantomWalletConnector(
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback",
+    redirectUri: "myapp://phantom-auth-callback",
     connectors: [connector]
 )
 ```

@@ -19,7 +19,7 @@ import PhantomConnectSDK
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback"
+    redirectUri: "myapp://phantom-auth-callback"
 )
 
 // Restore session on launch
@@ -58,7 +58,7 @@ let connector = PhantomWalletConnector(
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback",
+    redirectUri: "myapp://phantom-auth-callback",
     connectors: [connector]
 )
 ```
@@ -157,7 +157,7 @@ To disable persistence (e.g. for kiosk apps or shared devices):
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback",
+    redirectUri: "myapp://phantom-auth-callback",
     persistSession: false
 )
 ```
@@ -184,7 +184,7 @@ phantom.theme = .custom(
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback",
+    redirectUri: "myapp://phantom-auth-callback",
     logger: { level, tag, message in
         print("[\(level)] \(tag): \(message)")
     }

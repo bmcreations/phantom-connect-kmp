@@ -30,7 +30,7 @@ Built from the official [phantom-connect-sdk](https://github.com/phantom/phantom
 
 ## Prerequisites
 
-Create an app in [Phantom Portal](https://portal.phantom.app) to get your `appId`. Configure your redirect URI (e.g. `myapp://phantom-callback`).
+Create an app in [Phantom Portal](https://portal.phantom.app) to get your `appId`. Configure your redirect URI (e.g. `myapp://phantom-auth-callback`).
 
 ## Installation
 
@@ -72,7 +72,7 @@ val sdk = PhantomSdk.create(
     config = PhantomSdkConfig(
         appId = "your-app-id",
         redirectScheme = "myapp",
-        redirectUri = "myapp://phantom-callback",
+        redirectUri = "myapp://phantom-auth-callback",
     ),
     oauthLauncher = createOAuthLauncher(this),
 )
@@ -104,7 +104,7 @@ import PhantomConnectSDK
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback"
+    redirectUri: "myapp://phantom-auth-callback"
 )
 
 // 2. Connect
@@ -172,7 +172,7 @@ let connector = PhantomWalletConnector(
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback",
+    redirectUri: "myapp://phantom-auth-callback",
     connectors: [connector]
 )
 
@@ -293,7 +293,7 @@ val config = PhantomSdkConfig(
 let phantom = PhantomClient(
     appId: "your-app-id",
     redirectScheme: "myapp",
-    redirectUri: "myapp://phantom-callback",
+    redirectUri: "myapp://phantom-auth-callback",
     logger: { level, tag, message in
         print("[\(level)] \(tag): \(message)")
     }

@@ -13,7 +13,7 @@ public class PhantomClient {
     /// - Parameters:
     ///   - appId: Your Phantom Portal app ID
     ///   - redirectScheme: The URL scheme for OAuth callbacks (e.g., "myapp")
-    ///   - redirectUri: The full redirect URI (e.g., "myapp://phantom-callback")
+    ///   - redirectUri: The full redirect URI (e.g., "myapp://phantom-auth-callback")
     ///   - network: Chain network environment (default: `.mainnet`)
     ///   - logger: Optional log handler for SDK diagnostics
     public convenience init(
