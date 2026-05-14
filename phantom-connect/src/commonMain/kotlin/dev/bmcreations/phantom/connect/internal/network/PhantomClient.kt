@@ -26,6 +26,8 @@ internal class PhantomClient(
     private val timeProvider: TimeProvider = SystemTimeProvider(),
     private var authorizationHeader: String? = null,
 ) {
+    /** Override stamper for auth2 sessions. When set, all calls use this instead of the default Ed25519 stamper. */
+    var stamperOverride: Stamper? = null
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -72,7 +74,8 @@ internal class PhantomClient(
         )
         val bodyString = json.encodeToString(JsonRpcRequest.serializer(), request)
         val bodyBytes = bodyString.encodeToByteArray()
-        val stamp = stamper.stamp(bodyBytes)
+        val activeStamper = stamperOverride ?: stamper
+        val stamp = activeStamper.stamp(bodyBytes)
 
         SdkLogger.debug(TAG, "RPC $method stamp=${stamp.take(80)}... bodyLen=${bodyBytes.size} url=$url")
 

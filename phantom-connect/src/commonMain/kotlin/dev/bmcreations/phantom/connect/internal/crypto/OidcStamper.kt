@@ -44,6 +44,7 @@ internal class OidcStamper(
     initialRefreshToken: String? = null,
     initialTokenExpiresAt: Long = 0,
     initialIdType: String = "Bearer",
+    private val onTokensRefreshed: (suspend (bearerToken: String, refreshToken: String?, tokenExpiresAt: Long) -> Unit)? = null,
 ) : Stamper {
     private val stampJson = Json { encodeDefaults = true }
 
@@ -137,7 +138,7 @@ internal class OidcStamper(
         }
     }
 
-    private fun updateTokens(response: TokenResponse) {
+    private suspend fun updateTokens(response: TokenResponse) {
         accessToken = response.access_token
         idType = response.token_type
         if (response.refresh_token != null) {
@@ -146,5 +147,6 @@ internal class OidcStamper(
         val decoded = Auth2Token.decode(response.access_token)
         auth2Token = decoded.auth2Token
         tokenExpiresAt = decoded.expiresAt
+        onTokensRefreshed?.invoke(bearerToken, refreshToken, tokenExpiresAt)
     }
 }

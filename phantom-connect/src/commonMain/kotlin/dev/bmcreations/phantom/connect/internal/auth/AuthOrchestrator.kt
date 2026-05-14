@@ -4,7 +4,6 @@ import dev.bmcreations.phantom.connect.*
 import dev.bmcreations.phantom.connect.WalletConnector
 import dev.bmcreations.phantom.connect.WalletConnectorResult
 import dev.bmcreations.phantom.connect.internal.crypto.*
-import dev.bmcreations.phantom.connect.internal.network.PhantomApiException
 import dev.bmcreations.phantom.connect.internal.network.PhantomClient
 import dev.bmcreations.phantom.connect.internal.network.SolanaRpcClient
 import dev.bmcreations.phantom.connect.internal.network.SpendingLimitError
@@ -15,6 +14,9 @@ import dev.bmcreations.phantom.connect.internal.platform.TimeProvider
 import dev.bmcreations.phantom.connect.internal.platform.getPlatform
 import dev.bmcreations.phantom.connect.internal.platform.sdkType
 import io.ktor.client.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -22,7 +24,6 @@ import kotlinx.serialization.json.*
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Duration.Companion.days
-import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -55,6 +56,9 @@ internal class AuthOrchestrator(
     // Track whether we should clear previous session on next connect (loaded from store)
     private var shouldClearPreviousSession = false
     private var shouldClearLoaded = false
+
+    // OIDC stamper for auth2 sessions — persisted across signing calls, restored on app restart
+    private var oidcStamper: OidcStamper? = null
 
     private fun findConnector(providerId: String): WalletConnector? =
         connectors.firstOrNull { it.id == providerId }
@@ -112,12 +116,9 @@ internal class AuthOrchestrator(
         SdkLogger.info(TAG, "Connect started with provider=${provider.id}")
         _events.tryEmit(PhantomEvent.ConnectStart(provider.id, "social"))
 
-        // If P-256 key store is available, use the new auth2 PKCE flow
-        if (p256KeyStore != null && httpClient != null) {
-            return connectWithAuth2(provider)
-        }
-
-        // Legacy Ed25519 flow (fallback)
+        // Legacy Ed25519 redirect flow — matches upstream RN SDK's active ExpoAuthProvider.
+        // Auth2 PKCE flow is available via connectWithAuth2() but the upstream RN SDK
+        // currently uses the legacy redirect flow in production.
         return connectWithLegacyFlow(provider)
     }
 
@@ -142,11 +143,18 @@ internal class AuthOrchestrator(
             val sessionId = Uuid.random().toString()
 
             val jarBuilder = JarBuilder(p256, timeProvider)
-            val loginHint = "${provider.id}:auth2"
+            val loginHint = when (provider) {
+                is AuthProvider.Phantom, is AuthProvider.Device -> null
+                else -> "${provider.id}:auth2"
+            }
+
+            // The connectLoginUrl is the login page URL — used as both the JAR audience
+            // and the base URL for the browser redirect (per upstream auth2Flow.ts)
+            val connectLoginUrl = "${config.loginBaseUrl}/login/start"
 
             val signedJar = jarBuilder.buildJar(
                 keyTag = P256KeyStoreTags.PENDING,
-                aud = config.authApiBaseUrl,
+                aud = connectLoginUrl,
                 clientId = config.appId,
                 redirectUri = config.redirectUri,
                 nonce = nonce,
@@ -157,7 +165,7 @@ internal class AuthOrchestrator(
             )
 
             // Phase 4: Build login URL and launch browser
-            val loginUrl = "${config.loginBaseUrl}/login#jar=${urlEncode(signedJar)}"
+            val loginUrl = "$connectLoginUrl#jar=${urlEncode(signedJar)}"
 
             // Save pending session so we can resume after redirect
             val pendingSession = PhantomSession(
@@ -215,7 +223,7 @@ internal class AuthOrchestrator(
                     // For simplicity, we'll sign with PENDING tag and swap references
 
                     // Phase 7: Create OIDC stamper and set Authorization header
-                    val oidcStamper = OidcStamper(
+                    val stamperInstance = OidcStamper(
                         p256KeyStore = p256,
                         keyTag = P256KeyStoreTags.PENDING, // will be active once confirmed
                         timeProvider = timeProvider,
@@ -227,7 +235,12 @@ internal class AuthOrchestrator(
                         initialAccessToken = tokenResponse.access_token,
                         initialRefreshToken = tokenResponse.refresh_token,
                         initialTokenExpiresAt = decoded.expiresAt,
+                        onTokensRefreshed = { newBearerToken, newRefreshToken, newExpiresAt ->
+                            persistRefreshedTokens(newBearerToken, newRefreshToken, newExpiresAt)
+                        },
                     )
+                    this.oidcStamper = stamperInstance
+                    client.stamperOverride = stamperInstance
                     client.setAuthorizationHeader(bearerToken)
 
                     // Phase 8: Get/create organization
@@ -235,7 +248,7 @@ internal class AuthOrchestrator(
                     val orgResult = client.callWithStamper(
                         method = "getOrCreatePhantomOrganization",
                         params = buildJsonObject { put("publicKey", p256PubKeyB64) },
-                        overrideStamper = oidcStamper,
+                        overrideStamper = stamperInstance,
                     )
                     val organizationId = orgResult.jsonObject["organizationId"]?.jsonPrimitive?.content
                         ?: throw IllegalStateException("Missing organizationId")
@@ -245,10 +258,10 @@ internal class AuthOrchestrator(
                         val migrationsResult = client.callWithStamper(
                             method = "listPendingMigrations",
                             params = buildJsonObject { put("organizationId", organizationId) },
-                            overrideStamper = oidcStamper,
+                            overrideStamper = stamperInstance,
                         )
                         val migrations = migrationsResult.jsonObject["pendingMigrations"]?.jsonArray
-                        if (migrations != null && migrations.isNotEmpty()) {
+                        if (!migrations.isNullOrEmpty()) {
                             for (migration in migrations) {
                                 val migrationId = migration.jsonObject["migrationId"]?.jsonPrimitive?.content
                                 if (migrationId != null) {
@@ -258,7 +271,7 @@ internal class AuthOrchestrator(
                                             put("organizationId", organizationId)
                                             put("migrationId", migrationId)
                                         },
-                                        overrideStamper = oidcStamper,
+                                        overrideStamper = stamperInstance,
                                     )
                                 }
                             }
@@ -310,7 +323,7 @@ internal class AuthOrchestrator(
                                 }
                                 put("mnemonicLength", 24)
                             },
-                            overrideStamper = oidcStamper,
+                            overrideStamper = stamperInstance,
                         )
                         walletId = walletResult.jsonObject["walletId"]?.jsonPrimitive?.content
                             ?: throw IllegalStateException("Missing walletId")
@@ -329,7 +342,7 @@ internal class AuthOrchestrator(
                                 put("walletId", walletId)
                                 putJsonArray("accounts") { allPaths.forEach { add(it) } }
                             },
-                            overrideStamper = oidcStamper,
+                            overrideStamper = stamperInstance,
                         )
                         parseAddresses(accountsResult, derivPaths)
                     } catch (e: Exception) {
@@ -616,9 +629,17 @@ internal class AuthOrchestrator(
             return session
         }
 
-        // For auth2 sessions with bearer token, restore the Authorization header
+        // For auth2 sessions with bearer token, restore the Authorization header and OIDC stamper
         if (session.bearerToken != null) {
             client.setAuthorizationHeader(session.bearerToken)
+            restoreAuth2Stamper(session)
+            // If stamper restoration failed (P-256 key lost), session was cleared
+            if (oidcStamper == null && p256KeyStore != null) {
+                return null
+            }
+            if (oidcStamper != null) {
+                client.stamperOverride = oidcStamper
+            }
         }
 
         val renewed = renewAuthenticatorIfNeeded(session)
@@ -672,6 +693,9 @@ internal class AuthOrchestrator(
         keyStore.delete(KeyStoreTags.PENDING)
         p256KeyStore?.delete(P256KeyStoreTags.ACTIVE)
         p256KeyStore?.delete(P256KeyStoreTags.PENDING)
+        oidcStamper?.clear()
+        oidcStamper = null
+        client.stamperOverride = null
         client.setAuthorizationHeader(null)
         sessionStore.clear()
         persistShouldClear(shouldClear)
@@ -965,15 +989,86 @@ internal class AuthOrchestrator(
         }
     }
 
-    /** Batch sign and submit multiple transactions. */
+    /** Batch sign and submit multiple transactions (parallel, matching upstream Promise.all). */
     @OptIn(ExperimentalEncodingApi::class)
     suspend fun signAndSendAllTransactions(transactionsBase64: List<String>, chain: Chain = Chain.Solana): List<String> {
-        return transactionsBase64.map { tx ->
-            signAndSendTransaction(tx, chain)
+        return coroutineScope {
+            transactionsBase64.map { tx ->
+                async { signAndSendTransaction(tx, chain) }
+            }.awaitAll()
         }
     }
 
     // ── Private Helpers ──
+
+    /**
+     * Restore the OIDC stamper from a persisted auth2 session.
+     * Called during getSession() and autoConnect().
+     */
+    private suspend fun restoreAuth2Stamper(session: PhantomSession) {
+        if (oidcStamper != null) return // already restored
+
+        val p256 = p256KeyStore ?: return
+        val http = httpClient ?: return
+        val bearer = session.bearerToken ?: return
+
+        // Verify P-256 key still exists
+        val hasKey = p256.exists(P256KeyStoreTags.PENDING) || p256.exists(P256KeyStoreTags.ACTIVE)
+        if (!hasKey) {
+            SdkLogger.warn(TAG, "P-256 key lost — clearing invalid auth2 session")
+            sessionStore.clear()
+            return
+        }
+
+        val keyTag = if (p256.exists(P256KeyStoreTags.PENDING)) P256KeyStoreTags.PENDING else P256KeyStoreTags.ACTIVE
+
+        // Strip "Bearer " prefix to get the raw access token
+        val accessToken = bearer.removePrefix("Bearer ").removePrefix("bearer ")
+
+        try {
+            val decoded = Auth2Token.decode(accessToken)
+            val tokenExchange = TokenExchange(http)
+
+            oidcStamper = OidcStamper(
+                p256KeyStore = p256,
+                keyTag = keyTag,
+                timeProvider = timeProvider,
+                tokenExchange = tokenExchange,
+                authApiBaseUrl = config.authApiBaseUrl,
+                clientId = config.appId,
+                redirectUri = config.redirectUri,
+                initialAuth2Token = decoded.auth2Token,
+                initialAccessToken = accessToken,
+                initialRefreshToken = session.refreshToken,
+                initialTokenExpiresAt = decoded.expiresAt,
+                onTokensRefreshed = { newBearerToken, newRefreshToken, newExpiresAt ->
+                    persistRefreshedTokens(newBearerToken, newRefreshToken, newExpiresAt)
+                },
+            )
+            SdkLogger.info(TAG, "Restored OIDC stamper for auth2 session")
+        } catch (e: Exception) {
+            SdkLogger.warn(TAG, "Failed to restore OIDC stamper: ${e.message}")
+        }
+    }
+
+    /**
+     * Persist refreshed tokens back to the session store so they survive app restart.
+     */
+    private suspend fun persistRefreshedTokens(bearerToken: String, refreshToken: String?, tokenExpiresAt: Long) {
+        try {
+            val session = sessionStore.load() ?: return
+            val updated = session.copy(
+                bearerToken = bearerToken,
+                refreshToken = refreshToken ?: session.refreshToken,
+                tokenExpiresAt = tokenExpiresAt,
+            )
+            sessionStore.save(updated)
+            client.setAuthorizationHeader(bearerToken)
+            SdkLogger.debug(TAG, "Persisted refreshed tokens to session store")
+        } catch (e: Exception) {
+            SdkLogger.warn(TAG, "Failed to persist refreshed tokens: ${e.message}")
+        }
+    }
 
     private suspend fun requireSession(): PhantomSession =
         getSession() ?: throw IllegalStateException("No active session")
