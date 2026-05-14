@@ -66,3 +66,7 @@ scripts/             # Test runner scripts (run-e2e-tests.sh)
 - KMMBridge (iOS SPM distribution)
 - Android: minSdk 24, compileSdk 35, JVM 21
 - iOS: 16+
+
+## Skills
+
+- `/upstream-sync` — Structured workflow for syncing with the upstream `phantom/phantom-connect-sdk` JS monorepo. See `.claude/skills/upstream-sync.md`.
