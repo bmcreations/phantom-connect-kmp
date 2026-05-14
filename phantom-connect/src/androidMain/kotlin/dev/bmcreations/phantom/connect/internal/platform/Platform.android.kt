@@ -3,6 +3,7 @@ package dev.bmcreations.phantom.connect.internal.platform
 import android.annotation.SuppressLint
 import android.content.Context
 import dev.bmcreations.phantom.connect.internal.auth.AndroidSessionStore
+import dev.bmcreations.phantom.connect.internal.auth.SessionShouldClearDelegate
 import dev.bmcreations.phantom.connect.internal.auth.SessionStoreProvider
 import dev.bmcreations.phantom.connect.internal.crypto.AndroidEd25519KeyStore
 import dev.bmcreations.phantom.connect.internal.crypto.AndroidP256KeyStore
@@ -38,6 +39,19 @@ internal actual fun platformP256KeyStore(): P256KeyStoreProvider =
 
 internal actual fun platformSessionStore(): SessionStoreProvider =
     AndroidSessionStore.create(PhantomSdkInitializer.requireContext())
+
+internal actual fun platformShouldClearDelegate(): SessionShouldClearDelegate {
+    val prefs = PhantomSdkInitializer.requireContext()
+        .getSharedPreferences("phantom_connect_flags", Context.MODE_PRIVATE)
+    return object : SessionShouldClearDelegate {
+        override suspend fun save(shouldClear: Boolean) {
+            prefs.edit().putBoolean("should_clear_previous_session", shouldClear).apply()
+        }
+        override suspend fun load(): Boolean {
+            return prefs.getBoolean("should_clear_previous_session", false)
+        }
+    }
+}
 
 internal actual fun platformConnectSheetProvider(): ConnectSheetProvider =
     AndroidConnectSheetProvider()

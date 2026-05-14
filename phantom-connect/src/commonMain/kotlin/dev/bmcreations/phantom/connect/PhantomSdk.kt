@@ -103,7 +103,7 @@ class PhantomSdk private constructor(
 
             val keyStore = platformKeyStore()
             val p256KeyStore = platformP256KeyStore()
-            val sessionStore = if (config.persistSession) platformSessionStore() else InMemorySessionStore()
+            val sessionStore = if (config.persistSession) platformSessionStore() else InMemorySessionStore(platformShouldClearDelegate())
             val connectSheet = platformConnectSheetProvider()
             val timeProvider = SystemTimeProvider()
             val stamper = Ed25519Stamper(keyStore)
