@@ -105,6 +105,18 @@ android {
     }
 }
 
+// The KMP libsodium umbrella module resolves both -android (release) and -android-debug
+// variants for Android. Exclude the debug variant from published configurations to prevent
+// duplicate class conflicts in consumers that already depend on the release variant.
+afterEvaluate {
+    configurations
+        .filter { it.name.startsWith("releaseRuntimeElements") || it.name.startsWith("debugRuntimeElements") ||
+                  it.name.startsWith("releaseApiElements") || it.name.startsWith("debugApiElements") }
+        .forEach {
+            it.exclude(group = "com.ionspin.kotlin", module = "multiplatform-crypto-libsodium-bindings-android-debug")
+        }
+}
+
 kmmbridge {
     buildType.set(NativeBuildType.RELEASE)
     spm(
