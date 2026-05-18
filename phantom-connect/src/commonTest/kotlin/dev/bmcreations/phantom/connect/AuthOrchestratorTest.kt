@@ -30,7 +30,6 @@ class AuthOrchestratorTest {
 
     private val config = PhantomSdkConfig(
         appId = "test-app",
-        redirectScheme = "testapp",
         redirectUri = "testapp://phantom-callback",
         baseUrl = "https://api.phantom.app",
     )

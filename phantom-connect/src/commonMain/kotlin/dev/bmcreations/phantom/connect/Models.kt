@@ -404,7 +404,6 @@ enum class Network { Mainnet, Devnet, Testnet }
  * [React Native SDK](https://docs.phantom.com/sdks/react-native-sdk/index).
  *
  * @property appId App ID from [Phantom Portal](https://portal.phantom.app).
- * @property redirectScheme URL scheme for OAuth callbacks (e.g. `"myapp"`). Equivalent to `scheme` in the React Native SDK.
  * @property redirectUri Full redirect URI (e.g. `"myapp://phantom-auth-callback"`). Must use the `phantom-auth-callback` host to match the upstream convention. Equivalent to `authOptions.redirectUrl` in the React Native SDK.
  * @property baseUrl KMS API base URL. Override for testing only.
  * @property authApiBaseUrl OAuth2 token exchange base URL. Override for testing only.
@@ -419,7 +418,6 @@ enum class Network { Mainnet, Devnet, Testnet }
  */
 data class PhantomSdkConfig(
     val appId: String,
-    val redirectScheme: String,
     val redirectUri: String,
     val baseUrl: String = "https://api.phantom.app",
     val authApiBaseUrl: String = "https://auth.phantom.app",
@@ -430,4 +428,8 @@ data class PhantomSdkConfig(
     val persistSession: Boolean = true,
     val logger: PhantomLogger? = null,
     internal val sdkVersion: String = "2.0.2",
-)
+) {
+    /** URL scheme extracted from [redirectUri] (e.g. `"myapp"` from `"myapp://phantom-auth-callback"`). */
+    internal val redirectScheme: String
+        get() = redirectUri.substringBefore("://")
+}

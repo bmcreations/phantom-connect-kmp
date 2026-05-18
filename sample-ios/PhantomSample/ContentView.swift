@@ -65,7 +65,6 @@ struct ContentView: View {
         if isMock {
             client = PhantomClient(
                 appId: "test-app-id",
-                redirectScheme: "phantomsample",
                 redirectUri: "phantomsample://phantom-auth-callback",
                 connectors: [connector],
                 baseUrl: "http://localhost:8080",
@@ -76,7 +75,6 @@ struct ContentView: View {
         } else {
             client = PhantomClient(
                 appId: "f2f3406a-0ecf-4a20-96e4-18293772da65",
-                redirectScheme: "phantomsample",
                 redirectUri: "phantomsample://phantom-auth-callback",
                 connectors: [connector],
                 persistSession: persistSession

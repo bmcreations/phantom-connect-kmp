@@ -21,12 +21,12 @@ Built from the official [phantom-connect-sdk](https://github.com/phantom/phantom
 
 ## Requirements
 
-| Platform | Minimum Version |
-|----------|----------------|
+| Platform | Minimum Version      |
+|----------|----------------------|
 | Android  | API 24 (Android 7.0) |
-| iOS      | 16.0 |
-| Kotlin   | 2.1+ |
-| JVM      | 21 |
+| iOS      | 16.0                 |
+| Kotlin   | 2.1+                 |
+| JVM      | 21                   |
 
 ## Prerequisites
 
@@ -57,8 +57,6 @@ Add the package via Xcode:
 ### Android (Kotlin)
 
 ```kotlin
-import dev.bmcreations.phantom.connect.*
-
 // 1. Initialize in Application.onCreate()
 class MyApp : Application() {
     override fun onCreate() {
@@ -71,7 +69,6 @@ class MyApp : Application() {
 val sdk = PhantomSdk.create(
     config = PhantomSdkConfig(
         appId = "your-app-id",
-        redirectScheme = "myapp",
         redirectUri = "myapp://phantom-auth-callback",
     ),
     oauthLauncher = createOAuthLauncher(this),
@@ -103,7 +100,6 @@ import PhantomConnectSDK
 // 1. Create the client
 let phantom = PhantomClient(
     appId: "your-app-id",
-    redirectScheme: "myapp",
     redirectUri: "myapp://phantom-auth-callback"
 )
 
@@ -140,9 +136,6 @@ The optional `phantom-connect-wallet` module adds support for connecting and sig
 ### Android
 
 ```kotlin
-import dev.bmcreations.phantom.connect.wallet.PhantomWalletConnector
-import dev.bmcreations.phantom.connect.wallet.createDeeplinkLauncher
-
 val walletConnector = PhantomWalletConnector(
     deeplinkLauncher = createDeeplinkLauncher(applicationContext),
     appUrl = "https://your-app.example.com",
@@ -171,7 +164,6 @@ let connector = PhantomWalletConnector(
 
 let phantom = PhantomClient(
     appId: "your-app-id",
-    redirectScheme: "myapp",
     redirectUri: "myapp://phantom-auth-callback",
     connectors: [connector]
 )
@@ -193,7 +185,6 @@ For full details, see the [wallet module README](phantom-connect-wallet/README.m
 ```kotlin
 PhantomSdkConfig(
     appId = "your-app-id",           // Required: from Phantom Portal
-    redirectScheme = "myapp",         // Required: your app's URL scheme
     redirectUri = "myapp://callback", // Required: full redirect URI
     chains = listOf(Chain.Solana),    // Chains to fetch addresses for (default: Solana)
     providers = AuthProvider.all,     // Auth providers to offer (default: Google + Apple)
@@ -207,42 +198,42 @@ PhantomSdkConfig(
 
 ### Connection
 
-| Method | Description |
-|--------|-------------|
-| `connect()` | Show the connect sheet and let the user choose a provider |
-| `connect(provider)` | Connect with a specific provider directly |
+| Method               | Description                                                          |
+|----------------------|----------------------------------------------------------------------|
+| `connect()`          | Show the connect sheet and let the user choose a provider            |
+| `connect(provider)`  | Connect with a specific provider directly                            |
 | `connect(connector)` | Connect with a wallet connector directly (e.g. Phantom app deeplink) |
-| `createAppWallet()` | Create a programmatic app wallet (no OAuth) |
-| `logout()` | Clear session and keys |
+| `createAppWallet()`  | Create a programmatic app wallet (no OAuth)                          |
+| `logout()`           | Clear session and keys                                               |
 
 ### Session
 
-| Method | Description |
-|--------|-------------|
-| `getSession()` | Get the current session (auto-renews authenticator if needed) |
-| `isConnected()` | Whether there is an active session |
-| `getAddress(chain)` | First address for a chain, or null |
-| `getAddresses()` | All addresses from the current session |
+| Method              | Description                                                   |
+|---------------------|---------------------------------------------------------------|
+| `getSession()`      | Get the current session (auto-renews authenticator if needed) |
+| `isConnected()`     | Whether there is an active session                            |
+| `getAddress(chain)` | First address for a chain, or null                            |
+| `getAddresses()`    | All addresses from the current session                        |
 
 ### Solana Operations (`sdk.solana`)
 
-| Method | Description |
-|--------|-------------|
-| `getAddress()` | Get the Solana address |
-| `signMessage(message)` | Sign a UTF-8 message |
-| `signTransaction(base64)` | Sign a transaction without broadcasting |
-| `signAndSendTransaction(base64)` | Sign and submit a transaction |
-| `signAllTransactions(list)` | Batch sign multiple transactions in a single call |
+| Method                           | Description                                       |
+|----------------------------------|---------------------------------------------------|
+| `getAddress()`                   | Get the Solana address                            |
+| `signMessage(message)`           | Sign a UTF-8 message                              |
+| `signTransaction(base64)`        | Sign a transaction without broadcasting           |
+| `signAndSendTransaction(base64)` | Sign and submit a transaction                     |
+| `signAllTransactions(list)`      | Batch sign multiple transactions in a single call |
 
 ### Ethereum Operations (`sdk.ethereum`)
 
-| Method | Description |
-|--------|-------------|
-| `getAddress()` | Get the Ethereum address |
-| `personalSign(message)` | EIP-191 personal_sign |
-| `signTypedData(json)` | EIP-712 signTypedData_v4 |
-| `signTransaction(base64)` | Sign a transaction without broadcasting |
-| `signAndSendTransaction(base64)` | Sign and submit a transaction |
+| Method                           | Description                             |
+|----------------------------------|-----------------------------------------|
+| `getAddress()`                   | Get the Ethereum address                |
+| `personalSign(message)`          | EIP-191 personal_sign                   |
+| `signTypedData(json)`            | EIP-712 signTypedData_v4                |
+| `signTransaction(base64)`        | Sign a transaction without broadcasting |
+| `signAndSendTransaction(base64)` | Sign and submit a transaction           |
 
 ### Theming
 
@@ -292,7 +283,6 @@ val config = PhantomSdkConfig(
 // Swift
 let phantom = PhantomClient(
     appId: "your-app-id",
-    redirectScheme: "myapp",
     redirectUri: "myapp://phantom-auth-callback",
     logger: { level, tag, message in
         print("[\(level)] \(tag): \(message)")
@@ -393,22 +383,22 @@ When `persistSession` is `false`, sessions are held in memory only. They work no
 
 This SDK provides the same capabilities as the [Phantom Connect React Native SDK](https://docs.phantom.com/sdks/react-native-sdk/index) for native Kotlin and Swift apps. Here's how the APIs correspond:
 
-| React Native SDK | KMP SDK (Kotlin) | KMP SDK (Swift) |
-|------------------|-------------------|-----------------|
-| `PhantomProvider` config | `PhantomSdkConfig(...)` | `PhantomClient(...)` |
-| `config.appId` | `config.appId` | `appId:` |
-| `config.scheme` | `config.redirectScheme` | `redirectScheme:` |
-| `config.providers` | `config.providers` | (always Google + Apple) |
-| `config.addressTypes` | `config.chains` | (always Solana) |
-| `ConnectButton` / `useModal` | `sdk.connect()` | `phantom.connect()` |
-| `useConnect({ provider })` | `sdk.connect(provider)` | `phantom.connect(provider:)` |
-| `useAccounts().isConnected` | `sdk.isConnected()` | `phantom.getSession() != nil` |
-| `useAccounts().addresses` | `sdk.getAddresses()` | `session.addresses` |
-| `useDisconnect()` | `sdk.logout()` | `phantom.logout()` |
-| `useSolana().signMessage` | `sdk.solana.signMessage(msg)` | `phantom.solana.signMessage(msg)` |
+| React Native SDK                     | KMP SDK (Kotlin)                        | KMP SDK (Swift)                             |
+|--------------------------------------|-----------------------------------------|---------------------------------------------|
+| `PhantomProvider` config             | `PhantomSdkConfig(...)`                 | `PhantomClient(...)`                        |
+| `config.appId`                       | `config.appId`                          | `appId:`                                    |
+| `config.scheme`                      | Removed                                 | Removed                                     |
+| `config.providers`                   | `config.providers`                      | (always Google + Apple)                     |
+| `config.addressTypes`                | `config.chains`                         | (always Solana)                             |
+| `ConnectButton` / `useModal`         | `sdk.connect()`                         | `phantom.connect()`                         |
+| `useConnect({ provider })`           | `sdk.connect(provider)`                 | `phantom.connect(provider:)`                |
+| `useAccounts().isConnected`          | `sdk.isConnected()`                     | `phantom.getSession() != nil`               |
+| `useAccounts().addresses`            | `sdk.getAddresses()`                    | `session.addresses`                         |
+| `useDisconnect()`                    | `sdk.logout()`                          | `phantom.logout()`                          |
+| `useSolana().signMessage`            | `sdk.solana.signMessage(msg)`           | `phantom.solana.signMessage(msg)`           |
 | `useSolana().signAndSendTransaction` | `sdk.solana.signAndSendTransaction(tx)` | `phantom.solana.signAndSendTransaction(tx)` |
-| `useEthereum().signPersonalMessage` | `sdk.ethereum.personalSign(msg)` | `phantom.ethereum.personalSign(msg)` |
-| `useEthereum().signTypedData` | `sdk.ethereum.signTypedData(json)` | `phantom.ethereum.signTypedData(json)` |
+| `useEthereum().signPersonalMessage`  | `sdk.ethereum.personalSign(msg)`        | `phantom.ethereum.personalSign(msg)`        |
+| `useEthereum().signTypedData`        | `sdk.ethereum.signTypedData(json)`      | `phantom.ethereum.signTypedData(json)`      |
 
 For full React Native SDK documentation, see [docs.phantom.com](https://docs.phantom.com/sdks/react-native-sdk/index).
 

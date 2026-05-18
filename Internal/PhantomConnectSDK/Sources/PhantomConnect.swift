@@ -12,13 +12,11 @@ public class PhantomClient {
     ///
     /// - Parameters:
     ///   - appId: Your Phantom Portal app ID
-    ///   - redirectScheme: The URL scheme for OAuth callbacks (e.g., "myapp")
-    ///   - redirectUri: The full redirect URI (e.g., "myapp://phantom-auth-callback")
+    ///   - redirectUri: The full redirect URI (e.g., "myapp://phantom-auth-callback"). The URL scheme is extracted automatically.
     ///   - network: Chain network environment (default: `.mainnet`)
     ///   - logger: Optional log handler for SDK diagnostics
     public convenience init(
         appId: String,
-        redirectScheme: String,
         redirectUri: String,
         connectors: [any WalletConnector] = [],
         network: ChainNetwork = .mainnet,
@@ -27,7 +25,6 @@ public class PhantomClient {
     ) {
         self.init(
             appId: appId,
-            redirectScheme: redirectScheme,
             redirectUri: redirectUri,
             connectors: connectors,
             baseUrl: "https://api.phantom.app",
@@ -43,7 +40,6 @@ public class PhantomClient {
     /// Create a PhantomClient with custom URLs and/or OAuth launcher (for testing).
     public init(
         appId: String,
-        redirectScheme: String,
         redirectUri: String,
         connectors: [any WalletConnector] = [],
         baseUrl: String,
@@ -59,7 +55,6 @@ public class PhantomClient {
         }
         let config = PhantomSdkConfig(
             appId: appId,
-            redirectScheme: redirectScheme,
             redirectUri: redirectUri,
             baseUrl: baseUrl,
             authApiBaseUrl: authApiBaseUrl,

@@ -23,7 +23,6 @@ class PhantomClientTest {
     private lateinit var timeProvider: FakeTimeProvider
     private val config = PhantomSdkConfig(
         appId = "test-app-id",
-        redirectScheme = "testapp",
         redirectUri = "testapp://phantom-callback",
         baseUrl = "https://api.phantom.app",
     )

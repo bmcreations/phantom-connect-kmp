@@ -23,7 +23,6 @@ class PhantomSdkTest {
 
     private val config = PhantomSdkConfig(
         appId = "test-app",
-        redirectScheme = "testapp",
         redirectUri = "testapp://phantom-callback",
     )
 

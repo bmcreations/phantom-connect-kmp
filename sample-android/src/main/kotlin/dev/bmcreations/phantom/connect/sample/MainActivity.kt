@@ -55,7 +55,6 @@ class MainActivity : ComponentActivity() {
                     PhantomClient.create(
                         config = PhantomSdkConfig(
                             appId = BuildConfig.PHANTOM_APP_ID,
-                            redirectScheme = "phantomsample",
                             redirectUri = "phantomsample://phantom-auth-callback",
                             baseUrl = BuildConfig.PHANTOM_BASE_URL,
                             loginBaseUrl = BuildConfig.PHANTOM_LOGIN_BASE_URL,
