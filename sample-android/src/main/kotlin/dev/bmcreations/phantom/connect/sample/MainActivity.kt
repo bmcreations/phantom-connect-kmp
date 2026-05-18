@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
         val walletConnector = PhantomWalletConnector(
             deeplinkLauncher = createDeeplinkLauncher(applicationContext),
             appUrl = "https://phantom-kmp-sample.app",
-            callbackScheme = "phantomsample",
+            redirectUrl = "phantomsample://phantom-wallet-callback",
         )
 
         val oauthLauncher = createOAuthLauncher(this)

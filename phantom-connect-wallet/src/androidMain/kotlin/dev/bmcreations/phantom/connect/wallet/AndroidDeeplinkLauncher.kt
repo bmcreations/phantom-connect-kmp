@@ -26,7 +26,7 @@ class AndroidDeeplinkLauncher(
         PhantomWalletCallbackActivity.dismiss()
     }
 
-    override suspend fun launch(url: String, callbackScheme: String): DeeplinkResult {
+    override suspend fun launch(url: String): DeeplinkResult {
         val deferred = CompletableDeferred<DeeplinkResult>()
         PhantomWalletCallbackActivity.pendingResult = deferred
 

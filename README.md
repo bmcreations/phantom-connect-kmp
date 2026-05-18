@@ -146,7 +146,7 @@ import dev.bmcreations.phantom.connect.wallet.createDeeplinkLauncher
 val walletConnector = PhantomWalletConnector(
     deeplinkLauncher = createDeeplinkLauncher(applicationContext),
     appUrl = "https://your-app.example.com",
-    callbackScheme = "myapp",
+    redirectUrl = "myapp://phantom-wallet-callback",
 )
 
 val sdk = PhantomSdk.create(
@@ -166,7 +166,7 @@ import PhantomConnectSDK
 let connector = PhantomWalletConnector(
     deeplinkLauncher: createDeeplinkLauncher(),
     appUrl: "https://your-app.example.com",
-    callbackScheme: "myapp"
+    redirectUrl: "myapp://phantom-wallet-callback"
 )
 
 let phantom = PhantomClient(

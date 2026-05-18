@@ -54,7 +54,7 @@ class IosDeeplinkLauncher : DeeplinkLauncher {
         }
     }
 
-    override suspend fun launch(url: String, callbackScheme: String): DeeplinkResult {
+    override suspend fun launch(url: String): DeeplinkResult {
         return withContext(Dispatchers.Main) {
             val deferred = CompletableDeferred<DeeplinkResult>()
             pendingResult = deferred

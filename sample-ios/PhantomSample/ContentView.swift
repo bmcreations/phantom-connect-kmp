@@ -58,7 +58,7 @@ struct ContentView: View {
         let connector = PhantomWalletConnector(
             deeplinkLauncher: createDeeplinkLauncher(),
             appUrl: "https://phantom-kmp-sample.app",
-            callbackScheme: "phantomsample"
+            redirectUrl: "phantomsample://phantom-wallet-callback"
         )
 
         let client: PhantomClient

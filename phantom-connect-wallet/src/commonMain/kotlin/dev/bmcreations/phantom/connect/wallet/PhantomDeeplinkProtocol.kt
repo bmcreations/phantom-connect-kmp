@@ -20,7 +20,7 @@ import kotlin.random.Random
  */
 internal class PhantomDeeplinkProtocol(
     private val appUrl: String,
-    private val callbackScheme: String,
+    private val redirectUrl: String,
 ) {
     private var dappKeyPair: BoxKeyPair? = null
     private var sharedSecret: UByteArray? = null
@@ -78,7 +78,7 @@ internal class PhantomDeeplinkProtocol(
             put("app_url", appUrl)
             put("dapp_encryption_public_key", dappPublicKeyBase58)
             put("cluster", cluster)
-            put("redirect_link", "$callbackScheme://phantom-wallet-callback")
+            put("redirect_link", "$redirectUrl")
         }
         return "https://phantom.app/ul/v1/connect?" + params.entries.joinToString("&") { (k, v) ->
             "$k=${urlEncode(v)}"
@@ -98,7 +98,7 @@ internal class PhantomDeeplinkProtocol(
         val params = buildMap {
             put("dapp_encryption_public_key", dappPublicKeyBase58)
             put("nonce", nonce.toByteArray().toBase58())
-            put("redirect_link", "$callbackScheme://phantom-wallet-callback")
+            put("redirect_link", "$redirectUrl")
             put("payload", encrypted.toByteArray().toBase58())
         }
         return "https://phantom.app/ul/v1/signMessage?" + params.entries.joinToString("&") { (k, v) ->
@@ -235,7 +235,7 @@ internal class PhantomDeeplinkProtocol(
         val params = buildMap {
             put("dapp_encryption_public_key", dappPublicKeyBase58)
             put("nonce", nonce.toByteArray().toBase58())
-            put("redirect_link", "$callbackScheme://phantom-wallet-callback")
+            put("redirect_link", "$redirectUrl")
             put("payload", encrypted.toByteArray().toBase58())
         }
         return "https://phantom.app/ul/v1/$endpoint?" + params.entries.joinToString("&") { (k, v) ->

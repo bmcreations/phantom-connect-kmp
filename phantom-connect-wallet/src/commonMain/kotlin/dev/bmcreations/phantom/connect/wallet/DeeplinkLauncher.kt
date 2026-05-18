@@ -8,8 +8,8 @@ package dev.bmcreations.phantom.connect.wallet
  * from the core SDK.
  */
 interface DeeplinkLauncher {
-    /** Launch a deeplink [url] and suspend until callback arrives on [callbackScheme]. */
-    suspend fun launch(url: String, callbackScheme: String): DeeplinkResult
+    /** Launch a deeplink [url] and suspend until the callback arrives. */
+    suspend fun launch(url: String): DeeplinkResult
 
     /** Check if the Phantom wallet app is installed. */
     suspend fun isAppInstalled(): Boolean

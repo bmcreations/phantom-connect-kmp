@@ -14,25 +14,26 @@ import dev.bmcreations.phantom.connect.WalletSignResult
  *
  * @param deeplinkLauncher Platform-specific deeplink handler.
  * @param appUrl Your app's URL (used by Phantom to identify the dapp).
- * @param callbackScheme URL scheme for deeplink callbacks (e.g. "myapp").
+ * @param redirectUrl Full redirect URL for deeplink callbacks (e.g. "myapp://phantom-wallet-callback"
+ *   for custom schemes, or "https://yourapp.com/callback" for HTTPS universal links).
  */
 class PhantomWalletConnector(
     private val deeplinkLauncher: DeeplinkLauncher,
     private val appUrl: String,
-    private val callbackScheme: String,
+    private val redirectUrl: String,
 ) : WalletConnector {
 
     override val id: String = "phantom_app"
     override val displayName: String = "Phantom Wallet"
 
-    private val protocol = PhantomDeeplinkProtocol(appUrl, callbackScheme)
+    private val protocol = PhantomDeeplinkProtocol(appUrl, redirectUrl)
 
     override suspend fun isAppInstalled(): Boolean = deeplinkLauncher.isAppInstalled()
 
     override suspend fun connect(): WalletConnectorResult {
         val connectUrl = protocol.buildConnectUrl()
 
-        return when (val result = deeplinkLauncher.launch(connectUrl, callbackScheme)) {
+        return when (val result = deeplinkLauncher.launch(connectUrl)) {
             is DeeplinkResult.Success -> {
                 try {
                     result.params["errorCode"]?.let { code ->
@@ -56,7 +57,7 @@ class PhantomWalletConnector(
     override suspend fun disconnect() {
         try {
             val url = protocol.buildDisconnectUrl()
-            deeplinkLauncher.launch(url, callbackScheme)
+            deeplinkLauncher.launch(url)
         } catch (_: Exception) {
             // Best-effort — session state is cleared regardless.
         }
@@ -85,7 +86,7 @@ class PhantomWalletConnector(
     override suspend fun signAllTransactions(transactionsBase58: List<String>): WalletSignAllResult {
         val url = protocol.buildSignAllTransactionsUrl(transactionsBase58)
 
-        return when (val result = deeplinkLauncher.launch(url, callbackScheme)) {
+        return when (val result = deeplinkLauncher.launch(url)) {
             is DeeplinkResult.Success -> {
                 try {
                     checkForError(result.params)
@@ -109,7 +110,7 @@ class PhantomWalletConnector(
         url: String,
         parse: (Map<String, String>) -> String,
     ): WalletSignResult {
-        return when (val result = deeplinkLauncher.launch(url, callbackScheme)) {
+        return when (val result = deeplinkLauncher.launch(url)) {
             is DeeplinkResult.Success -> {
                 try {
                     checkForError(result.params)

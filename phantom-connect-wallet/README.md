@@ -38,7 +38,7 @@ import dev.bmcreations.phantom.connect.wallet.createDeeplinkLauncher
 val walletConnector = PhantomWalletConnector(
     deeplinkLauncher = createDeeplinkLauncher(applicationContext),
     appUrl = "https://your-app.example.com",
-    callbackScheme = "myapp",
+    redirectUrl = "myapp://phantom-wallet-callback",
 )
 
 val sdk = PhantomSdk.create(
@@ -62,7 +62,7 @@ import PhantomConnectSDK
 let connector = PhantomWalletConnector(
     deeplinkLauncher: createDeeplinkLauncher(),
     appUrl: "https://your-app.example.com",
-    callbackScheme: "myapp"
+    redirectUrl: "myapp://phantom-wallet-callback"
 )
 
 let phantom = PhantomClient(
@@ -95,7 +95,7 @@ struct MyApp: App {
 |-----------|-------------|
 | `deeplinkLauncher` | Platform-specific deeplink handler — use `createDeeplinkLauncher()` factory (Android requires a `Context` argument) |
 | `appUrl` | Your app's HTTPS URL — used by Phantom to identify the dapp. Must be a valid URL, not a custom scheme. |
-| `callbackScheme` | URL scheme for deeplink callbacks (e.g. `"myapp"`). Phantom sends results back to `{callbackScheme}://phantom-wallet-callback`. |
+| `redirectUrl` | Full redirect URL for deeplink callbacks (e.g. `"myapp://phantom-wallet-callback"` for custom schemes, or `"https://yourapp.com/callback"` for HTTPS universal links). |
 
 ## Availability Check
 
