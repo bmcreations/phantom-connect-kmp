@@ -17,7 +17,8 @@ plugins {
 }
 
 group = "dev.bmcreations"
-version = project.findProperty("VERSION_NAME")?.toString() ?: "0.0.0-SNAPSHOT"
+version = project.findProperty("VERSION_NAME")?.toString()
+    ?: "${project.property("upstream.version")}-${project.property("sdk.revision")}"
 
 kotlin {
     applyDefaultHierarchyTemplate()
@@ -106,12 +107,11 @@ android {
 }
 
 // The KMP libsodium umbrella module resolves both -android (release) and -android-debug
-// variants for Android. Exclude the debug variant from published configurations to prevent
-// duplicate class conflicts in consumers that already depend on the release variant.
+// variants for Android. Exclude the debug variant from Maven-published configurations only
+// so consumers don't get duplicate classes, while local sample apps can still resolve it.
 afterEvaluate {
     configurations
-        .filter { it.name.startsWith("releaseRuntimeElements") || it.name.startsWith("debugRuntimeElements") ||
-                  it.name.startsWith("releaseApiElements") || it.name.startsWith("debugApiElements") }
+        .filter { it.name.startsWith("releaseRuntimeElements") || it.name.startsWith("releaseApiElements") }
         .forEach {
             it.exclude(group = "com.ionspin.kotlin", module = "multiplatform-crypto-libsodium-bindings-android-debug")
         }

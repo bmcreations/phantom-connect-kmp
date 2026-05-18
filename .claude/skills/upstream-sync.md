@@ -37,7 +37,7 @@ Synchronize this KMP SDK with changes from the upstream `phantom/phantom-connect
 ### Phase 1: Identify upstream changes
 
 1. Fetch the upstream repo (or browse it on GitHub) and diff against the last synced tag/commit
-2. The last synced upstream version is recorded in the most recent git tag on this repo (currently `v2.0.2`)
+2. The last synced upstream version is recorded in `upstream.version` in `gradle.properties` (currently `2.0.2`)
 3. Focus on `packages/phantom-connect-sdk/src/` — this is the core logic
 4. Categorize changes: new features, bug fixes, API changes, new endpoints, config changes
 
@@ -79,10 +79,11 @@ Key translation patterns:
 
 ### Phase 5: Tag and publish
 
-1. Update version tag to match upstream: `git tag -a v<version> -m "v<version>"`
-2. Push tag: `git push origin v<version>`
-3. Publish to Maven Central: `./gradlew publishAllPublicationsToMavenCentralRepository -PVERSION_NAME=<version>`
-4. Build and publish iOS SPM: `./gradlew :phantom-connect:assemblePhantomConnectKMPReleaseXCFramework`
+1. Update `upstream.version` in `gradle.properties` to the new upstream version and reset `sdk.revision` to `1.0.0`
+2. Tag: `git tag -a v<upstream>-<revision> -m "v<upstream>-<revision>"`
+3. Push tag: `git push origin v<upstream>-<revision>`
+4. Publish to Maven Central: `./gradlew publishAllPublicationsToMavenCentralRepository`
+5. Build and publish iOS SPM: `./gradlew :phantom-connect:assemblePhantomConnectKMPReleaseXCFramework`
 
 ## Common Pitfalls
 
