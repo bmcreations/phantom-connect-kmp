@@ -2,9 +2,8 @@ package dev.bmcreations.phantom.connect.internal.auth
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import dev.bmcreations.phantom.connect.PhantomSession
+import dev.bmcreations.phantom.connect.internal.storage.EncryptedPrefs
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -18,19 +17,7 @@ internal class AndroidSessionStore private constructor(
         private const val KEY_SHOULD_CLEAR = "should_clear_previous_session"
 
         fun create(context: Context): AndroidSessionStore {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            val prefs = EncryptedSharedPreferences.create(
-                context,
-                PREFS_FILE,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-
-            return AndroidSessionStore(prefs)
+            return AndroidSessionStore(EncryptedPrefs.create(context, PREFS_FILE))
         }
     }
 
@@ -41,8 +28,10 @@ internal class AndroidSessionStore private constructor(
     }
 
     override suspend fun load(): PhantomSession? {
-        val raw = prefs.getString(KEY_SESSION, null) ?: return null
         return try {
+            // getString performs the AES-GCM value decrypt, so a per-value tag failure must be
+            // caught here too — treat any read/parse failure as "no session".
+            val raw = prefs.getString(KEY_SESSION, null) ?: return null
             json.decodeFromString<PhantomSession>(raw)
         } catch (_: Exception) {
             null
@@ -58,6 +47,10 @@ internal class AndroidSessionStore private constructor(
     }
 
     override suspend fun loadShouldClearPreviousSession(): Boolean {
-        return prefs.getBoolean(KEY_SHOULD_CLEAR, false)
+        return try {
+            prefs.getBoolean(KEY_SHOULD_CLEAR, false)
+        } catch (_: Exception) {
+            false
+        }
     }
 }

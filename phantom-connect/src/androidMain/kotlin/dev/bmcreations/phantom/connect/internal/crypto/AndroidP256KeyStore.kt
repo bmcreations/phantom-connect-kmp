@@ -2,8 +2,7 @@ package dev.bmcreations.phantom.connect.internal.crypto
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import dev.bmcreations.phantom.connect.internal.storage.EncryptedPrefs
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.Signature
@@ -18,19 +17,7 @@ internal class AndroidP256KeyStore private constructor(
         private const val PREFS_FILE = "phantom_connect_p256_keystore"
 
         fun create(context: Context): AndroidP256KeyStore {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            val prefs = EncryptedSharedPreferences.create(
-                context,
-                PREFS_FILE,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-
-            return AndroidP256KeyStore(prefs)
+            return AndroidP256KeyStore(EncryptedPrefs.create(context, PREFS_FILE))
         }
     }
 
@@ -60,7 +47,7 @@ internal class AndroidP256KeyStore private constructor(
     }
 
     override suspend fun getRawPublicKey(tag: String): ByteArray? {
-        val hex = prefs.getString("${tag}_public", null) ?: return null
+        val hex = safeGetString("${tag}_public") ?: return null
         return hex.hexToByteArray()
     }
 
@@ -81,11 +68,20 @@ internal class AndroidP256KeyStore private constructor(
     }
 
     private fun loadPrivateKey(tag: String): java.security.PrivateKey? {
-        val hex = prefs.getString("${tag}_private", null) ?: return null
+        val hex = safeGetString("${tag}_private") ?: return null
         val keyBytes = hex.hexToByteArray()
         val keySpec = PKCS8EncodedKeySpec(keyBytes)
         return KeyFactory.getInstance("EC").generatePrivate(keySpec)
     }
+
+    // getString decrypts the stored value with AES-GCM; a corrupt entry must read as absent rather
+    // than crash, so callers regenerate the key.
+    private fun safeGetString(key: String): String? =
+        try {
+            prefs.getString(key, null)
+        } catch (_: Exception) {
+            null
+        }
 
     /**
      * Extract the uncompressed point (65 bytes: 0x04 || x || y) from an X.509 SubjectPublicKeyInfo.
