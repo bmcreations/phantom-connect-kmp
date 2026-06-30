@@ -2,9 +2,8 @@ package dev.bmcreations.phantom.connect.internal.crypto
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.ionspin.kotlin.crypto.signature.Signature
+import dev.bmcreations.phantom.connect.internal.storage.EncryptedPrefs
 import java.security.SecureRandom
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -16,19 +15,7 @@ internal class AndroidEd25519KeyStore private constructor(
         private const val PREFS_FILE = "phantom_connect_keystore"
 
         fun create(context: Context): AndroidEd25519KeyStore {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            val prefs = EncryptedSharedPreferences.create(
-                context,
-                PREFS_FILE,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-
-            return AndroidEd25519KeyStore(prefs)
+            return AndroidEd25519KeyStore(EncryptedPrefs.create(context, PREFS_FILE))
         }
     }
 
@@ -74,7 +61,13 @@ internal class AndroidEd25519KeyStore private constructor(
     }
 
     private fun loadSeed(tag: String): ByteArray? {
-        val hex = prefs.getString(tag, null) ?: return null
+        // getString decrypts the stored value with AES-GCM; a corrupt entry must read as absent
+        // rather than crash, so callers regenerate the key.
+        val hex = try {
+            prefs.getString(tag, null)
+        } catch (_: Exception) {
+            null
+        } ?: return null
         return hex.hexToByteArray()
     }
 
